@@ -1,0 +1,3 @@
+# Quadrotor RL Policy
+This repository contains the code used to develop, implement, and test a RL-policy for navigation of a quadrotor.
+More coming...
