@@ -4,3 +4,6 @@
 [submodule "src/aerial_gym_simulator"]
 	path = src/aerial_gym_simulator
 	url = git@github.com:Kvello/aerial_gym_simulator.git
+[submodule "src/CBF_Quadrotor"]
+	path = src/CBF_Quadrotor
+	url = git@github.com:Kvello/CBF_quadrotor.git
