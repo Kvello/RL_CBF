@@ -1,0 +1,6 @@
+[submodule "src/urdfpy"]
+	path = src/urdfpy
+	url = git@github.com:mmatl/urdfpy.git
+[submodule "src/aerial_gym_simulator"]
+	path = src/aerial_gym_simulator
+	url = git@github.com:Kvello/aerial_gym_simulator.git
