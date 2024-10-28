@@ -5,10 +5,35 @@ import numpy as np
 from aerial_gym.utils.vae.vae_image_encoder import VAEImageEncoder
 from gym.spaces import Box, Dict
 from aerial_gym.utils.math import *
-from aerial_gym.utils.logging import logger
+from aerial_gym.utils.logging import CustomLogger
+from exponential_CBF_quadrotor.C_safety_filters.Composite_ECBF_safety_filter_efficient import QuadrotorCompositeCBFSafetyFilterEfficient
+from exponential_CBF_quadrotor.A_system_models.quadrotor import Quadrotor
+
+logger = CustomLogger("CBF_navigation_task")
+
+class LiDARDownsampler(torch.nn.Module):
+    def __init__(self):
+        super(LiDARDownsampler, self).__init__()
+        self.downsample = torch.nn.MaxPool2d(kernel_size=(16,16), stride=16)
+    def forward(self, x):
+        ret = -self.downsample(-x).flatten(start_dim = -2) #Min pool
+        return ret
 # Simple RL task with CBF based safety filter
 class CBFNavigationTask(BaseTask):
-    def __init__(self, task_config):
+    def __init__(
+        self, task_config, seed=None, num_envs=None, headless=None, device=None, use_warp=None
+    ):
+        # overwrite the params if user has provided them
+        if seed is not None:
+            task_config.seed = seed
+        if num_envs is not None:
+            task_config.num_envs = num_envs
+        if headless is not None:
+            task_config.headless = headless
+        if device is not None:
+            task_config.device = device
+        if use_warp is not None:
+            task_config.use_warp = use_warp
         super().__init__(task_config)
         self.device = task_config.device
         # Put all reward parameters to torch tensor on device
@@ -37,9 +62,9 @@ class CBFNavigationTask(BaseTask):
         ).expand(self.sim_env.num_envs,-1)
 
         self.success_aggregate = 0
-        self.crashe_aggregate = 0
-        self.time_aggregate = 0
-        self.pos_error_vechicle_frame_prev = torch.zeros_like(self.target_position)
+        self.crashes_aggregate = 0
+        self.timeouts_aggregate = 0
+        self.pos_error_vehicle_frame_prev = torch.zeros_like(self.target_position)
 
         self.pos_error_vehicle_frame = torch.zeros_like(self.target_position)
 
@@ -52,6 +77,9 @@ class CBFNavigationTask(BaseTask):
             )
         else:
             self.vae_model = lambda x: x
+        self.downsampled_lidar = torch.zeros(
+            (self.sim_env.num_envs, 32*8), device=self.device, requires_grad=False
+        )
         # Get the dictionary once from the environment and use it to get the observations later.
         # This is to avoid constant retuning of data back anf forth across functions as the tensors update and can be read in-place.
         self.obs_dict = self.sim_env.get_obs()
@@ -68,7 +96,6 @@ class CBFNavigationTask(BaseTask):
         self.terminations = self.obs_dict["crashes"]
         self.truncations = self.obs_dict["truncations"]
         self.rewards = torch.zeros(self.truncations.shape[0], device=self.device)
-
         self.observation_space = Dict(
             {
                 "observations": Box(
@@ -107,7 +134,7 @@ class CBFNavigationTask(BaseTask):
             ),
         }
         self.num_task_steps = 0
-
+        self.lidar_downsampler = LiDARDownsampler()
     def close(self):
         self.sim_env.delete_env()
 
@@ -238,7 +265,9 @@ class CBFNavigationTask(BaseTask):
         # import matplotlib.pyplot as plt
         # plt.imsave(f"image0{self.img_ctr}.png", image0, vmin=0, vmax=1)
         # plt.imsave(f"decoded_image0{self.img_ctr}.png", decoded_image0, vmin=0, vmax=1)
-
+    def process_lidar_observation(self):
+        lidar_obs = self.obs_dict["depth_range_pixels"].squeeze(1)
+        self.downsampled_lidar[:] = self.lidar_downsampler(lidar_obs)
     def step(self, actions):
         # this uses the action, gets observations
         # calculates rewards, returns tuples
@@ -293,7 +322,8 @@ class CBFNavigationTask(BaseTask):
             self.reset_idx(reset_envs)
         self.num_task_steps += 1
         # do stuff with the image observations here
-        self.process_image_observation()
+        # self.process_image_observation()
+        self.process_lidar_observation()
         if self.task_config.return_state_before_reset == False:
             return_tuple = self.get_return_tuple()
         return return_tuple
@@ -317,7 +347,7 @@ class CBFNavigationTask(BaseTask):
         self.task_obs["observations"][:, 7:10] = self.obs_dict["robot_body_linvel"]
         self.task_obs["observations"][:, 10:13] = self.obs_dict["robot_body_angvel"]
         self.task_obs["observations"][:, 13:17] = self.obs_dict["robot_actions"]
-        self.task_obs["observations"][:, 17:] = self.image_latents
+        self.task_obs["observations"][:, 17:] = self.downsampled_lidar
         self.task_obs["rewards"] = self.rewards
         self.task_obs["terminations"] = self.terminations
         self.task_obs["truncations"] = self.truncations
