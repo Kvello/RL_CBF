@@ -14,9 +14,9 @@ class task_config:
     use_warp = True
     headless = True
     device = "cuda:0"
-    observation_space_dim = 13 + 3 + 64 + 24*6  # root_state + action_dim _+ latent_dims + downsampled_lidar_dims
+    observation_space_dim = 13 + 4 + 32*8 # root_state + action_dim _ + downsampled_lidar_dims + CBF_dim
     privileged_observation_space_dim = 0
-    action_space_dim = 3
+    action_space_dim = 4
     episode_len_steps = 100  # real physics time for simulation is this value multiplied by sim.dt
 
     return_state_before_reset = (
@@ -84,7 +84,7 @@ class task_config:
         clamped_action[:, 0] += 1.0
 
         processed_action = torch.zeros(
-            (clamped_action.shape[0], 3), device=task_config.device, requires_grad=False
+            (clamped_action.shape[0], 4), device=task_config.device, requires_grad=False
         )
         processed_action[:, 0] = (
             clamped_action[:, 0]

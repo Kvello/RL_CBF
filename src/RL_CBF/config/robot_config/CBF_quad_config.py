@@ -12,7 +12,7 @@ from aerial_gym.config.sensor_config.imu_config.base_imu_config import BaseImuCo
 
 class CBFQuadCfg(BaseQuadCfg):
     class sensor_config:
-        enable_camera = True
+        enable_camera = False
         camera_config = BaseDepthCameraConfig
 
         enable_lidar = True
@@ -23,5 +23,5 @@ class CBFQuadCfg(BaseQuadCfg):
     
     class disturbance:
         enable_disturbance = False # False for simplicity
-        # prob_apply_disturbance = 0.02
-        # max_force_and_torque_disturbance = [0.75, 0.75, 0.75, 0.004, 0.004, 0.004]
+        prob_apply_disturbance = 0.02
+        max_force_and_torque_disturbance = [0.75, 0.75, 0.75, 0.004, 0.004, 0.004]
