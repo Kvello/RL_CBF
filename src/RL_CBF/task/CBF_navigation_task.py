@@ -15,7 +15,10 @@ class LiDARDownsampler(torch.nn.Module):
     def __init__(self):
         super(LiDARDownsampler, self).__init__()
         self.downsample = torch.nn.MaxPool2d(kernel_size=(16,16), stride=16)
+        self.norm = torch.nn.BatchNorm2d(1)
     def forward(self, x):
+        # Normalize the input
+        x = self.norm(x.unsqueeze(1))
         ret = -self.downsample(-x).flatten(start_dim = -2) #Min pool
         return ret
 # Simple RL task with CBF based safety filter
