@@ -12,10 +12,11 @@ from exponential_CBF_quadrotor.A_system_models.quadrotor import Quadrotor
 logger = CustomLogger("CBF_navigation_task")
 
 class LiDARDownsampler(torch.nn.Module):
-    def __init__(self):
+    def __init__(self,device):
+        self.device = device
         super(LiDARDownsampler, self).__init__()
         self.downsample = torch.nn.MaxPool2d(kernel_size=(16,16), stride=16)
-        self.norm = torch.nn.BatchNorm2d(1)
+        self.norm = torch.nn.BatchNorm2d(1,device=self.device)
     def forward(self, x):
         # Normalize the input
         x = self.norm(x.unsqueeze(1))
@@ -137,7 +138,7 @@ class CBFNavigationTask(BaseTask):
             ),
         }
         self.num_task_steps = 0
-        self.lidar_downsampler = LiDARDownsampler()
+        self.lidar_downsampler = LiDARDownsampler(device=self.device)
     def close(self):
         self.sim_env.delete_env()
 
@@ -269,8 +270,8 @@ class CBFNavigationTask(BaseTask):
         # plt.imsave(f"image0{self.img_ctr}.png", image0, vmin=0, vmax=1)
         # plt.imsave(f"decoded_image0{self.img_ctr}.png", decoded_image0, vmin=0, vmax=1)
     def process_lidar_observation(self):
-        lidar_obs = self.obs_dict["depth_range_pixels"].squeeze(1)
-        self.downsampled_lidar[:] = self.lidar_downsampler(lidar_obs)
+        lidar_obs = self.obs_dict["depth_range_pixels"].squeeze(1).to(self.device)
+        self.downsampled_lidar[:] = self.lidar_downsampler(lidar_obs).squeeze(1)
     def step(self, actions):
         # this uses the action, gets observations
         # calculates rewards, returns tuples
