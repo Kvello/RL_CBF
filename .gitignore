@@ -1,4 +1,8 @@
 .venv
 .direnv
 .vscode
+__pycache__
+runs
+nn
+
 
