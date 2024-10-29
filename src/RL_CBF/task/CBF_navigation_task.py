@@ -20,7 +20,7 @@ class LiDARDownsampler(torch.nn.Module):
     def forward(self, x):
         # Normalize the input
         x = self.norm(x.unsqueeze(1))
-        ret = -self.downsample(-x).flatten(start_dim = -2) #Min pool
+        ret = -self.downsample(-x).flatten(start_dim=-2) #Min pool
         return ret
 # Simple RL task with CBF based safety filter
 class CBFNavigationTask(BaseTask):
@@ -139,6 +139,10 @@ class CBFNavigationTask(BaseTask):
         }
         self.num_task_steps = 0
         self.lidar_downsampler = LiDARDownsampler(device=self.device)
+        self.mass = 0.25 #This is read out from a terminal. Should figure out a place to pu
+        # it so that it can be read from the simulation
+        self.model = Quadrotor(self.mass,device=self.device)
+        self.CBF = QuadrotorCompositeCBFSafetyFilterEfficient(self.mass,self.model)
     def close(self):
         self.sim_env.delete_env()
 
@@ -272,6 +276,18 @@ class CBFNavigationTask(BaseTask):
     def process_lidar_observation(self):
         lidar_obs = self.obs_dict["depth_range_pixels"].squeeze(1).to(self.device)
         self.downsampled_lidar[:] = self.lidar_downsampler(lidar_obs).squeeze(1)
+        # # comments to make sure the downsampler does as expected
+        # original_image = lidar_obs[0].cpu().numpy()
+        # downsampled_image = self.lidar_downsampler(lidar_obs[0].unsqueeze(0)).squeeze().cpu().numpy()
+        # # save as .png with timestep
+        # if not hasattr(self, "img_ctr"):
+        #     self.img_ctr = 0
+        # self.img_ctr += 1
+        # import matplotlib.pyplot as plt
+        # plt.imsave(f"image0{self.img_ctr}.png", downsampled_image, vmin=0, vmax=1,
+        #            cmap='gray')
+        # plt.imsave(f"original_image{self.img_ctr}.png", original_image, vmin=0, vmax=1,
+        #            cmap='gray')
     def step(self, actions):
         # this uses the action, gets observations
         # calculates rewards, returns tuples
