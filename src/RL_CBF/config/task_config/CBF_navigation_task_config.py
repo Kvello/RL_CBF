@@ -8,7 +8,7 @@ class task_config:
     sim_name = "base_sim"
     env_name = "env_with_obstacles"
     robot_name = "CBF_quadrotor"
-    controller_name = "simplified_attitude_control"
+    controller_name = "lee_attitude_control"
     args = {}
     num_envs = 1024
     use_warp = True
