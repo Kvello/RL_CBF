@@ -14,7 +14,9 @@ class task_config:
     use_warp = True
     headless = True
     device = "cuda:0"
-    observation_space_dim = 13 + 4 + 32*8 # root_state + action_dim _ + downsampled_lidar_dims + CBF_dim
+    lidar_num_obs = 32*8
+    CBF_safe_dist = 0.5
+    observation_space_dim = 13 + 4 + lidar_num_obs # root_state + action_dim _ + downsampled_lidar_dims + CBF_dim
     privileged_observation_space_dim = 0
     action_space_dim = 4
     episode_len_steps = 100  # real physics time for simulation is this value multiplied by sim.dt
@@ -46,6 +48,7 @@ class task_config:
         "yawrate_absolute_action_penalty_magnitude": 1.5,
         "yawrate_absolute_action_penalty_exponent": 2.0,
         "collision_penalty": -20.0,
+        "cbf_kappa_gain" : 0.1,
     }
 
     class vae_config:

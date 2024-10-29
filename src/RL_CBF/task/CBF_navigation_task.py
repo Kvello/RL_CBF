@@ -6,14 +6,15 @@ from aerial_gym.utils.vae.vae_image_encoder import VAEImageEncoder
 from gym.spaces import Box, Dict
 from aerial_gym.utils.math import *
 from aerial_gym.utils.logging import CustomLogger
-from exponential_CBF_quadrotor.C_safety_filters.Composite_ECBF_safety_filter_efficient import QuadrotorCompositeCBFSafetyFilterEfficient
-from exponential_CBF_quadrotor.A_system_models.quadrotor import Quadrotor
-
+from exponential_CBF_quadrotor.C_safety_filters.Composite_first_order_CBF import FirstOrderCompositeQuadCollisionCBF
 logger = CustomLogger("CBF_navigation_task")
 
 class LiDARDownsampler(torch.nn.Module):
     def __init__(self):
         super(LiDARDownsampler, self).__init__()
+        # TODO:
+        # Make the downsampling kernel size and stride as a parameter
+        # as a function of the output and input size
         self.downsample = torch.nn.MaxPool2d(kernel_size=(16,16), stride=16)
     def forward(self, x):
         ret = -self.downsample(-x).flatten(start_dim = -2) #Min pool
@@ -135,6 +136,12 @@ class CBFNavigationTask(BaseTask):
         }
         self.num_task_steps = 0
         self.lidar_downsampler = LiDARDownsampler()
+        self.mass = 0.25 # Read this from the terminal
+        # Should find a way to read it from the simulation
+        self.collision_cbf = FirstOrderCompositeQuadCollisionCBF(
+            mass=self.mass,
+            eps = task_config.CBF_safe_dist,
+            num_obstacles=task_config.lidar_num_obs)
     def close(self):
         self.sim_env.delete_env()
 
@@ -266,6 +273,9 @@ class CBFNavigationTask(BaseTask):
         # plt.imsave(f"image0{self.img_ctr}.png", image0, vmin=0, vmax=1)
         # plt.imsave(f"decoded_image0{self.img_ctr}.png", decoded_image0, vmin=0, vmax=1)
     def process_lidar_observation(self):
+        # TODO: Retreive lidar detection directions from the observation
+        # Either by trigonomatric calculations or by
+        # switching to point cloud based lidar
         lidar_obs = self.obs_dict["depth_range_pixels"].squeeze(1)
         self.downsampled_lidar[:] = self.lidar_downsampler(lidar_obs)
     def step(self, actions):
@@ -357,11 +367,24 @@ class CBFNavigationTask(BaseTask):
         target_position = self.target_position
         robot_vehicle_orientation = obs_dict["robot_vehicle_orientation"]
         robot_orientation = obs_dict["robot_orientation"]
+        robot_action = obs_dict["robot_actions"]
+        robot_lin_vel_command = robot_action[:,0:3]
         target_orientation = torch.zeros_like(robot_orientation, device=self.device)
         target_orientation[:, 3] = 1.0
         self.pos_error_vehicle_frame_prev[:] = self.pos_error_vehicle_frame
         self.pos_error_vehicle_frame[:] = quat_rotate_inverse(
             robot_vehicle_orientation, (target_position - robot_position)
+        )
+        # TODO: make sure downsampled_lidar is a vector
+        cbf_derivative = self.collision_cbf.get_h_derivative(
+            robot_position,
+            robot_lin_vel_command,
+            self.downsampled_lidar + robot_position
+        )
+        # TODO: make sure downsampled_lidar is a vector
+        cbf_value = self.collision_cbf.get_composite_cbf_value(
+            robot_position,
+            obst = self.downsampled_lidar + robot_position
         )
         return compute_reward(
             self.pos_error_vehicle_frame,
@@ -369,8 +392,10 @@ class CBFNavigationTask(BaseTask):
             obs_dict["crashes"],
             obs_dict["robot_actions"],
             obs_dict["robot_prev_actions"],
+            cbf_derivative,
+            cbf_value,
             self.curriculum_progress_fraction,
-            self.task_config.reward_parameters,
+            self.task_config.reward_parameters
         )
 
 
@@ -397,10 +422,12 @@ def compute_reward(
     crashes,
     action,
     prev_action,
+    cbf_derivative,
+    cbf_value,
     curriculum_progress_fraction,
     parameter_dict,
 ):
-    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, float, Dict[str, Tensor]) -> Tuple[Tensor, Tensor]
+    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, float, Dict[str, Tensor]) -> Tuple[Tensor, Tensor]
     MULTIPLICATION_FACTOR_REWARD = (1.0 + (2.0) * curriculum_progress_fraction) * 3.0
     dist = torch.norm(pos_error, dim=1)
     prev_dist_to_goal = torch.norm(prev_pos_error, dim=1)
@@ -452,8 +479,13 @@ def compute_reward(
         action[:, 3],
     )
     absolute_action_penalty = x_absolute_penalty + z_absolute_penalty + yawrate_absolute_penalty
-    total_action_penalty = action_diff_penalty + absolute_action_penalty
-
+    # TODO: Tune the cbf invariance penalty, to be
+    # a) comparable to the other penalties
+    # b) consider exponential penalty
+    # c) using high enought value to maybe guarantee that the CBF is satisfied
+    cbf_inv_penalty = min(0.0, cbf_derivative + parameter_dict["cbf_kappa_gain"]*cbf_value)*\
+        parameter_dict["cbf_invariance_penalty_gain"]
+    total_action_penalty = action_diff_penalty + absolute_action_penalty + cbf_inv_penalty
     # combined reward
     reward = (
         MULTIPLICATION_FACTOR_REWARD
