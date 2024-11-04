@@ -8,15 +8,19 @@ class task_config:
     sim_name = "base_sim"
     env_name = "env_with_obstacles"
     robot_name = "CBF_quadrotor"
-    controller_name = "simplified_attitude_control"
+    controller_name = "lee_velocity_control"
     args = {}
     num_envs = 1024
     use_warp = True
     headless = True
     device = "cuda:0"
-    lidar_num_obs = 32*8
-    CBF_safe_dist = 0.5
-    observation_space_dim = 13 + 4 + lidar_num_obs # root_state + action_dim _ + downsampled_lidar_dims + CBF_dim
+    lidar_downsampler_config = {
+        "height": 6,
+        "width": 16,
+    }
+    lidar_num_obs = lidar_downsampler_config["height"] * lidar_downsampler_config["width"]
+    CBF_safe_dist = 0.1
+    observation_space_dim = 13 + 4 + lidar_num_obs #+1+1# root_state + action_dim _ + downsampled_lidar_dims + CBF_dim + CBF_derivative_dim
     privileged_observation_space_dim = 0
     action_space_dim = 4
     episode_len_steps = 100  # real physics time for simulation is this value multiplied by sim.dt
@@ -28,7 +32,6 @@ class task_config:
 
     target_min_ratio = [0.90, 0.1, 0.1]  # target ratio w.r.t environment bounds in x,y,z
     target_max_ratio = [0.94, 0.90, 0.90]  # target ratio w.r.t environment bounds in x,y,z
-
     reward_parameters = {
         "pos_reward_magnitude": 5.0,
         "pos_reward_exponent": 1.0 / 3.5,
@@ -49,6 +52,7 @@ class task_config:
         "yawrate_absolute_action_penalty_exponent": 2.0,
         "collision_penalty": -20.0,
         "cbf_kappa_gain" : 0.1,
+        "cbf_invariance_penalty_magnitude" : 1.0,
     }
 
     class vae_config:
