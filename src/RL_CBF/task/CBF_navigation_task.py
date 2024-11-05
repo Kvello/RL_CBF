@@ -313,8 +313,8 @@ class CBFNavigationTask(BaseTask):
         # plt.imsave(f"image0{self.img_ctr}.png", image0, vmin=0, vmax=1)
         # plt.imsave(f"decoded_image0{self.img_ctr}.png", decoded_image0, vmin=0, vmax=1)
     def process_lidar_observation(self):
-        # lidar_obs = self.obs_dict["depth_range_pixels"].squeeze(1)
-        # self.downsampled_lidar[:] = self.lidar_downsampler(lidar_obs)
+        lidar_obs = self.obs_dict["depth_range_pixels"].squeeze(1)
+        self.downsampled_lidar[:] = self.lidar_downsampler(lidar_obs)
         # original_img = lidar_obs[0].cpu().numpy()
         # downsampled_img = self.downsampled_lidar[0].reshape(6,16).cpu().numpy()
         # if not hasattr(self, "img_ctr"):
@@ -391,8 +391,8 @@ class CBFNavigationTask(BaseTask):
             self.reset_idx(reset_envs)
         self.num_task_steps += 1
         # do stuff with the image observations here
-        self.process_image_observation()
-        # self.process_lidar_observation()
+        # self.process_image_observation()
+        self.process_lidar_observation()
         # self.process_cbf_observation()
         if self.task_config.return_state_before_reset == False:
             return_tuple = self.get_return_tuple()
