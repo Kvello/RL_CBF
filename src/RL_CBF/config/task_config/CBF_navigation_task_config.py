@@ -15,8 +15,8 @@ class task_config:
     headless = True
     device = "cuda:0"
     lidar_downsampler_config = {
-        "height": 6,
-        "width": 16,
+        "height": 16,
+        "width": 64,
     }
     lidar_num_obs = lidar_downsampler_config["height"] * lidar_downsampler_config["width"]
     CBF_safe_dist = 0.1
