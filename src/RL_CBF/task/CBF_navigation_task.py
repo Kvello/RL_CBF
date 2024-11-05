@@ -178,10 +178,6 @@ class CBFNavigationTask(BaseTask):
             eps = task_config.CBF_safe_dist,
             num_obstacles=task_config.lidar_num_obs,
             kappa=1e2)
-        self.cbf_values = torch.zeros(self.sim_env.num_envs,
-                                      device=self.device)
-        self.cbf_derivatives = torch.zeros(self.sim_env.num_envs,
-                                           device=self.device)
     def close(self):
         self.sim_env.delete_env()
 
@@ -325,18 +321,6 @@ class CBFNavigationTask(BaseTask):
         # plt.imsave(f"downsampled{self.img_ctr}.png", downsampled_img, vmin=0, vmax=1)
         self.downsampled_lidar_displacements[:] = \
             self.lidar_downsampler.get_displacements(self.downsampled_lidar)
-    def process_cbf_observation(self):
-        robot_position = self.obs_dict["robot_position"]
-        robot_lin_vel_command = self.obs_dict["robot_actions"][:,0:3]
-        self.cbf_values = self.collision_cbf.get_composite_cbf_value(
-            robot_position,
-            disp = self.downsampled_lidar_displacements
-        )
-        self.cbf_derivatives = self.collision_cbf.get_h_derivative(
-            robot_position,
-            robot_lin_vel_command,
-            disp= self.downsampled_lidar_displacements
-        )
     def step(self, actions):
         # this uses the action, gets observations
         # calculates rewards, returns tuples
@@ -393,7 +377,6 @@ class CBFNavigationTask(BaseTask):
         # do stuff with the image observations here
         # self.process_image_observation()
         self.process_lidar_observation()
-        # self.process_cbf_observation()
         if self.task_config.return_state_before_reset == False:
             return_tuple = self.get_return_tuple()
         return return_tuple
@@ -427,6 +410,16 @@ class CBFNavigationTask(BaseTask):
         target_position = self.target_position
         robot_vehicle_orientation = obs_dict["robot_vehicle_orientation"]
         robot_orientation = obs_dict["robot_orientation"]
+        robot_lin_vel_command = self.obs_dict["robot_actions"][:,0:3]
+        cbf_values = self.collision_cbf.get_composite_cbf_value(
+            robot_position,
+            disp = self.downsampled_lidar_displacements
+        )
+        cbf_derivatives = self.collision_cbf.get_h_derivative(
+            robot_position,
+            robot_lin_vel_command,
+            disp= self.downsampled_lidar_displacements
+        )
         target_orientation = torch.zeros_like(robot_orientation, device=self.device)
         target_orientation[:, 3] = 1.0
         self.pos_error_vehicle_frame_prev[:] = self.pos_error_vehicle_frame
@@ -439,8 +432,8 @@ class CBFNavigationTask(BaseTask):
             obs_dict["crashes"],
             obs_dict["robot_actions"],
             obs_dict["robot_prev_actions"],
-            self.cbf_derivatives,
-            self.cbf_values,
+            cbf_derivatives,
+            cbf_values,
             self.curriculum_progress_fraction,
             self.task_config.reward_parameters
         )
@@ -533,7 +526,7 @@ def compute_reward(
     cbf_inv_penalty = cbf_derivative + parameter_dict["cbf_kappa_gain"]*cbf_value
     cbf_inv_penalty = torch.clamp(cbf_inv_penalty, max=0.0)
     cbf_inv_penalty *= parameter_dict["cbf_invariance_penalty_magnitude"]
-    total_action_penalty = action_diff_penalty + absolute_action_penalty # + cbf_inv_penalty
+    total_action_penalty = action_diff_penalty + absolute_action_penalty + cbf_inv_penalty
     # combined reward
     reward = (
         MULTIPLICATION_FACTOR_REWARD
