@@ -16,8 +16,8 @@ class LiDARDownsampler(torch.nn.Module):
         # TODO:
         # Make the downsampling kernel size and stride as a parameter
         # as a function of the output and input size
-        downsample_factor_width = BaseLidarConfig.width//width
-        downsample_factor_height = BaseLidarConfig.height//height
+        downsample_factor_width = round(BaseLidarConfig.width/width)
+        downsample_factor_height = round(BaseLidarConfig.height/height)
         self.normalize = torch.nn.LayerNorm((height,width),device=torch.device("cuda:0"))
         self.downsample = torch.nn.MaxPool2d(kernel_size=(downsample_factor_height,
                                                           downsample_factor_width),)
@@ -64,7 +64,8 @@ class CBFNavigationTask(BaseTask):
         super().__init__(task_config)
         self.device = task_config.device
         self.lidar_downsampler = LiDARDownsampler(
-            task_config.lidar_downsampler_config["width"], task_config.lidar_downsampler_config["height"]
+            task_config.lidar_downsampler_config["width"], 
+            task_config.lidar_downsampler_config["height"]
         )
         # Put all reward parameters to torch tensor on device
         for key in self.task_config.reward_parameters.keys():
@@ -142,8 +143,7 @@ class CBFNavigationTask(BaseTask):
                 )
             }
         )
-        # Action space is [T, roll, pitch]
-        self.action_space = Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32)
+        self.action_space = Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32)
         self.action_transformation_function = self.task_config.action_transformation_function
 
         self.num_envs = self.sim_env.num_envs
@@ -391,9 +391,9 @@ class CBFNavigationTask(BaseTask):
             self.reset_idx(reset_envs)
         self.num_task_steps += 1
         # do stuff with the image observations here
-        # self.process_image_observation()
-        self.process_lidar_observation()
-        self.process_cbf_observation()
+        self.process_image_observation()
+        # self.process_lidar_observation()
+        # self.process_cbf_observation()
         if self.task_config.return_state_before_reset == False:
             return_tuple = self.get_return_tuple()
         return return_tuple
@@ -433,7 +433,6 @@ class CBFNavigationTask(BaseTask):
         self.pos_error_vehicle_frame[:] = quat_rotate_inverse(
             robot_vehicle_orientation, (target_position - robot_position)
         )
-        # TODO: make sure downsampled_lidar is a vector
         return compute_reward(
             self.pos_error_vehicle_frame,
             self.pos_error_vehicle_frame_prev,
@@ -531,9 +530,10 @@ def compute_reward(
     # a) comparable to the other penalties
     # b) consider exponential penalty
     # c) using high enought value to maybe guarantee that the CBF is satisfied
-    cbf_inv_penalty = torch.clamp(cbf_derivative + parameter_dict["cbf_kappa_gain"]*cbf_value,min = 0.0)*\
-        parameter_dict["cbf_invariance_penalty_magnitude"]
-    total_action_penalty = action_diff_penalty + absolute_action_penalty #+ cbf_inv_penalty
+    cbf_inv_penalty = cbf_derivative + parameter_dict["cbf_kappa_gain"]*cbf_value
+    cbf_inv_penalty = torch.clamp(cbf_inv_penalty, max=0.0)
+    cbf_inv_penalty *= parameter_dict["cbf_invariance_penalty_magnitude"]
+    total_action_penalty = action_diff_penalty + absolute_action_penalty # + cbf_inv_penalty
     # combined reward
     reward = (
         MULTIPLICATION_FACTOR_REWARD
