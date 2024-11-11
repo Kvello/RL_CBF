@@ -40,6 +40,7 @@ class task_config:
         "width": 64,
     }
     CBF_safe_dist = CBFLidarConfig.min_range + 0.05
+    include_cbf_invariance_penalty = False
     observation_space_dim = 13 + 4 + vae_config.latent_dims #+1+1# root_state + action_dim _ + downsampled_lidar_dims + CBF_dim + CBF_derivative_dim
     privileged_observation_space_dim = 0
     action_space_dim = 4

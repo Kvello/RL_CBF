@@ -10,10 +10,10 @@ from aerial_gym.config.sensor_config.imu_config.base_imu_config import BaseImuCo
 
 class CBFQuadCfg(BaseQuadCfg):
     class sensor_config:
-        enable_camera = False
+        enable_camera = True
         camera_config = BaseDepthCameraConfig
 
-        enable_lidar = True
+        enable_lidar = False
         lidar_config = CBFLidarConfig  # OSDome_64_Config
 
         enable_imu = False

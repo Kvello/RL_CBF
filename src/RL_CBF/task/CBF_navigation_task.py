@@ -389,8 +389,10 @@ class CBFNavigationTask(BaseTask):
             self.reset_idx(reset_envs)
         self.num_task_steps += 1
         # do stuff with the image observations here
-        # self.process_image_observation()
-        self.process_lidar_observation()
+        if self.task_config.vae_config.use_lidar_vae:
+            self.process_lidar_observation()
+        elif self.task_config.vae_config.use_camera_vae:
+            self.process_image_observation()
         if self.task_config.return_state_before_reset == False:
             return_tuple = self.get_return_tuple()
         return return_tuple
@@ -432,19 +434,20 @@ class CBFNavigationTask(BaseTask):
             robot_vehicle_orientation, (target_position - robot_position)
         )
         parameter_dict = self.task_config.reward_parameters
-        # cbf_values = self.collision_cbf.get_composite_cbf_value(
-        #     robot_position,
-        #     disp = self.downsampled_lidar_displacements
-        # )
-        # cbf_derivatives = self.collision_cbf.get_h_derivative(
-        #     robot_position,
-        #     robot_lin_vel_command,
-        #     disp= self.downsampled_lidar_displacements
-        # )
-        # cbf_inv_penalty = cbf_derivatives + parameter_dict["cbf_kappa_gain"]*cbf_values
-        # cbf_inv_penalty = torch.clamp(cbf_inv_penalty, max=0.0)
-        # cbf_inv_penalty *= parameter_dict["cbf_invariance_penalty_magnitude"]
-        cbf_inv_penalty = torch.zeros_like(self.pos_error_vehicle_frame[:, 0])
+        if self.task_config.include_cbf_invariance_penalty:
+            cbf_values = self.collision_cbf.get_composite_cbf_value(
+                robot_position,
+                disp = self.downsampled_lidar_displacements
+            )
+            cbf_derivatives = self.collision_cbf.get_h_derivative(
+                robot_position,
+                robot_lin_vel_command,
+                disp= self.downsampled_lidar_displacements
+            )
+            cbf_inv_penalty = cbf_derivatives + parameter_dict["cbf_kappa_gain"]*cbf_values
+            cbf_inv_penalty = torch.clamp(cbf_inv_penalty, max=0.0)
+            cbf_inv_penalty *= parameter_dict["cbf_invariance_penalty_magnitude"]
+            cbf_inv_penalty = torch.zeros_like(self.pos_error_vehicle_frame[:, 0])
         # TODO: Tune the cbf invariance penalty, to be
         # a) comparable to the other penalties
         # b) consider exponential penalty
