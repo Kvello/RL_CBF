@@ -1,9 +1,30 @@
 from aerial_gym.config.task_config.navigation_task_config import task_config
 from exponential_CBF_quadrotor.C_safety_filters.Composite_ECBF_safety_filter_efficient import QuadrotorCompositeCBFSafetyFilterEfficient
+from vae_lidar import LIDAR_VAE_DIRECTORY
 from aerial_gym import AERIAL_GYM_DIRECTORY
+from ..sensor_config.lidar_config.CBF_lidar_config import CBFLidarConfig
 import torch
 
 class task_config:
+    class vae_config:
+        use_camera_vae = True
+        use_lidar_vae = False
+        latent_dims = 64
+        dropout_rate = 0.1
+        # model_file = (
+        #     LIDAR_VAE_DIRECTORY
+        #     + "/vae_lidar.pth"
+        # )
+        model_file = (
+            AERIAL_GYM_DIRECTORY
+            + "/aerial_gym/utils/vae/weights/ICRA_test_set_more_sim_data_kld_beta_3_LD_64_epoch_49.pth"
+        )
+        model_folder = AERIAL_GYM_DIRECTORY
+        #image_size = (CBFLidarConfig.height, CBFLidarConfig.width)
+        image_res = (270, 480)
+        interpolation_mode = "nearest"
+        return_sampled_latent = True
+
     seed = -1
     sim_name = "base_sim"
     env_name = "env_with_obstacles"
@@ -14,13 +35,12 @@ class task_config:
     use_warp = True
     headless = True
     device = "cuda:0"
-    lidar_downsampler_config = {
+    range_cbf_img_size = {
         "height": 16,
         "width": 64,
     }
-    lidar_num_obs = lidar_downsampler_config["height"] * lidar_downsampler_config["width"]
-    CBF_safe_dist = 0.1
-    observation_space_dim = 13 + 4 + lidar_num_obs #+1+1# root_state + action_dim _ + downsampled_lidar_dims + CBF_dim + CBF_derivative_dim
+    CBF_safe_dist = CBFLidarConfig.min_range + 0.05
+    observation_space_dim = 13 + 4 + vae_config.latent_dims #+1+1# root_state + action_dim _ + downsampled_lidar_dims + CBF_dim + CBF_derivative_dim
     privileged_observation_space_dim = 0
     action_space_dim = 4
     episode_len_steps = 100  # real physics time for simulation is this value multiplied by sim.dt
@@ -51,21 +71,9 @@ class task_config:
         "yawrate_absolute_action_penalty_magnitude": 1.5,
         "yawrate_absolute_action_penalty_exponent": 2.0,
         "collision_penalty": -20.0,
-        "cbf_kappa_gain" : 0.1,
-        "cbf_invariance_penalty_magnitude" : 1.0,
+        "cbf_kappa_gain" : 1.0,
+        "cbf_invariance_penalty_magnitude" : 100.0,
     }
-
-    class vae_config:
-        use_vae = True
-        latent_dims = 64
-        model_file = (
-            AERIAL_GYM_DIRECTORY
-            + "/aerial_gym/utils/vae/weights/ICRA_test_set_more_sim_data_kld_beta_3_LD_64_epoch_49.pth"
-        )
-        model_folder = AERIAL_GYM_DIRECTORY
-        image_res = (270, 480)
-        interpolation_mode = "nearest"
-        return_sampled_latent = True
 
     class curriculum:
         min_level = 10

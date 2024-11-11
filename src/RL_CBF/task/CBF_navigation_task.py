@@ -3,16 +3,18 @@ from aerial_gym.sim.sim_builder import SimBuilder
 import torch
 import numpy as np
 from gym.spaces import Dict, Box
+from vae_lidar.vae import Vae as VAELidar
 from aerial_gym.utils.vae.vae_image_encoder import VAEImageEncoder
-from ..config.sensor_config.lidar_config.CBF_lidar_config import CBFLidarConfig
+from config.sensor_config.lidar_config.CBF_lidar_config import CBFLidarConfig
 from aerial_gym.utils.math import *
 from aerial_gym.utils.logging import CustomLogger
 from exponential_CBF_quadrotor.C_safety_filters.Composite_first_order_CBF import FirstOrderCompositeQuadCollisionCBF
+import wandb
 logger = CustomLogger("CBF_navigation_task")
 
-class LiDARDownsampler(torch.nn.Module):
+class LiDARCBF(torch.nn.Module):
     def __init__(self,width = 32, height = 8):
-        super(LiDARDownsampler, self).__init__()
+        super(LiDARCBF, self).__init__()
         downsample_factor_width = round(CBFLidarConfig.width/width)
         downsample_factor_height = round(CBFLidarConfig.height/height)
         self.downsample = torch.nn.MaxPool2d(kernel_size=(downsample_factor_height,
@@ -20,11 +22,8 @@ class LiDARDownsampler(torch.nn.Module):
         self.direction_map = None
         self.width = width
         self.height = height
-        self.range_limits = (CBFLidarConfig.min_range,CBFLidarConfig.max_range)
     def forward(self, x):
         # Normalize before or after downsampling?
-        # min-max normalization
-        x = (x-self.range_limits[0])/(self.range_limits[1]-self.range_limits[0])
         ret = -self.downsample(-x)
         return ret
     def get_displacements(self,lidar_image)->torch.Tensor:
@@ -61,9 +60,9 @@ class CBFNavigationTask(BaseTask):
             task_config.use_warp = use_warp
         super().__init__(task_config)
         self.device = task_config.device
-        self.lidar_downsampler = LiDARDownsampler(
-            task_config.lidar_downsampler_config["width"], 
-            task_config.lidar_downsampler_config["height"]
+        self.lidar_cbf_data = LiDARCBF(
+            task_config.range_cbf_img_size["width"], 
+            task_config.range_cbf_img_size["height"]
         )
         # Put all reward parameters to torch tensor on device
         for key in self.task_config.reward_parameters.keys():
@@ -97,9 +96,17 @@ class CBFNavigationTask(BaseTask):
 
         self.pos_error_vehicle_frame = torch.zeros_like(self.target_position)
 
-        if self.task_config.vae_config.use_vae:
-            self.vae_model = VAEImageEncoder(config=self.task_config.vae_config, device=self.device)
-            self.image_latents = torch.zeros(
+        if self.task_config.vae_config.use_lidar_vae:
+            self.vae_model = VAELidar(size_latent=self.task_config.vae_config.latent_dims,
+                                      shape_imgs=self.task_config.vae_config.image_size,
+                                      dropout_rate=task_config.vae_config.dropout_rate,
+                                      filename=self.task_config.vae_config.model_file,
+                                      device=self.device)
+        elif self.task_config.vae_config.use_camera_vae:
+            self.vae_model = VAEImageEncoder(config=self.task_config.vae_config, 
+                                             device=self.device)
+            
+            self.range_latents = torch.zeros(
                 (self.sim_env.num_envs, self.task_config.vae_config.latent_dims),
                 device=self.device,
                 requires_grad=False,
@@ -108,12 +115,8 @@ class CBFNavigationTask(BaseTask):
             self.vae_model = lambda x: x
         self.downsampled_lidar_displacements = torch.zeros(
             (self.sim_env.num_envs, 
-             self.lidar_downsampler.width*self.lidar_downsampler.height
+             self.lidar_cbf_data.width*self.lidar_cbf_data.height
              ,3), device=self.device, requires_grad=False
-        )
-        self.downsampled_lidar = torch.zeros(
-            (self.sim_env.num_envs,
-             self.lidar_downsampler.width*self.lidar_downsampler.height), device=self.device, requires_grad=False
         )
         # Get the dictionary once from the environment and use it to get the observations later.
         # This is to avoid constant retuning of data back anf forth across functions as the tensors update and can be read in-place.
@@ -174,7 +177,8 @@ class CBFNavigationTask(BaseTask):
         self.collision_cbf = FirstOrderCompositeQuadCollisionCBF(
             mass=self.mass,
             eps = task_config.CBF_safe_dist,
-            num_obstacles=task_config.lidar_num_obs,
+            num_obstacles=task_config.range_cbf_img_size["width"]\
+                *task_config.range_cbf_img_size["height"],
             kappa=1e2)
     def close(self):
         self.sim_env.delete_env()
@@ -294,9 +298,9 @@ class CBFNavigationTask(BaseTask):
 
     def process_image_observation(self):
         image_obs = self.obs_dict["depth_range_pixels"].squeeze(1)
-        self.image_latents[:] = self.vae_model.encode(image_obs)
+        self.range_latents[:] = self.vae_model.encode(image_obs)
         # # comments to make sure the VAE does as expected
-        # decoded_image = self.vae_model.decode(self.image_latents[0].unsqueeze(0))
+        # decoded_image = self.vae_model.decode(self.range_latents[0].unsqueeze(0))
         # image0 = image_obs[0].cpu().numpy()
         # decoded_image0 = decoded_image[0].squeeze(0).cpu().numpy()
         # # save as .png with timestep
@@ -307,8 +311,16 @@ class CBFNavigationTask(BaseTask):
         # plt.imsave(f"image0{self.img_ctr}.png", image0, vmin=0, vmax=1)
         # plt.imsave(f"decoded_image0{self.img_ctr}.png", decoded_image0, vmin=0, vmax=1)
     def process_lidar_observation(self):
+        lidar_range_limits = (CBFLidarConfig.min_range,
+                              CBFLidarConfig.max_range)
         lidar_obs = self.obs_dict["depth_range_pixels"].squeeze(1)
-        self.downsampled_lidar[:] = self.lidar_downsampler(lidar_obs)
+        # Normalize the lidar observation(min-max normalization)
+        with torch.no_grad():
+            if self.task_config.vae_config.use_lidar_vae:
+                _,means,stds= self.vae_model(lidar_obs.unsqueeze(1))
+                self.range_latents[:] = means + torch.randn_like(stds)*stds
+            elif self.task_config.vae_config.use_camera_vae:
+                self.range_latents[:] = self.vae_model.encode(lidar_obs)
         # original_img = lidar_obs[0].cpu().numpy()
         # downsampled_img = self.downsampled_lidar[0].reshape(6,16).cpu().numpy()
         # if not hasattr(self, "img_ctr"):
@@ -317,8 +329,12 @@ class CBFNavigationTask(BaseTask):
         # import matplotlib.pyplot as plt
         # plt.imsave(f"original{self.img_ctr}.png", original_img, vmin=0, vmax=1)
         # plt.imsave(f"downsampled{self.img_ctr}.png", downsampled_img, vmin=0, vmax=1)
+        # Scale the lidar data to obtain the real range values
+        lidar_obs_scaled = lidar_obs*(lidar_range_limits[1]-lidar_range_limits[0])\
+            +lidar_range_limits[0]
+        downsampled_lidar = self.lidar_cbf_data(lidar_obs_scaled)
         self.downsampled_lidar_displacements[:] = \
-            self.lidar_downsampler.get_displacements(self.downsampled_lidar)
+            self.lidar_cbf_data.get_displacements(downsampled_lidar)
     def step(self, actions):
         # this uses the action, gets observations
         # calculates rewards, returns tuples
@@ -398,7 +414,7 @@ class CBFNavigationTask(BaseTask):
         self.task_obs["observations"][:, 7:10] = self.obs_dict["robot_body_linvel"]
         self.task_obs["observations"][:, 10:13] = self.obs_dict["robot_body_angvel"]
         self.task_obs["observations"][:, 13:17] = self.obs_dict["robot_actions"]
-        self.task_obs["observations"][:, 17:] = self.downsampled_lidar
+        self.task_obs["observations"][:, 17:] = self.range_latents
         self.task_obs["rewards"] = self.rewards
         self.task_obs["terminations"] = self.terminations
         self.task_obs["truncations"] = self.truncations
@@ -409,29 +425,39 @@ class CBFNavigationTask(BaseTask):
         robot_vehicle_orientation = obs_dict["robot_vehicle_orientation"]
         robot_orientation = obs_dict["robot_orientation"]
         robot_lin_vel_command = self.obs_dict["robot_actions"][:,0:3]
-        cbf_values = self.collision_cbf.get_composite_cbf_value(
-            robot_position,
-            disp = self.downsampled_lidar_displacements
-        )
-        cbf_derivatives = self.collision_cbf.get_h_derivative(
-            robot_position,
-            robot_lin_vel_command,
-            disp= self.downsampled_lidar_displacements
-        )
         target_orientation = torch.zeros_like(robot_orientation, device=self.device)
         target_orientation[:, 3] = 1.0
         self.pos_error_vehicle_frame_prev[:] = self.pos_error_vehicle_frame
         self.pos_error_vehicle_frame[:] = quat_rotate_inverse(
             robot_vehicle_orientation, (target_position - robot_position)
         )
+        parameter_dict = self.task_config.reward_parameters
+        # cbf_values = self.collision_cbf.get_composite_cbf_value(
+        #     robot_position,
+        #     disp = self.downsampled_lidar_displacements
+        # )
+        # cbf_derivatives = self.collision_cbf.get_h_derivative(
+        #     robot_position,
+        #     robot_lin_vel_command,
+        #     disp= self.downsampled_lidar_displacements
+        # )
+        # cbf_inv_penalty = cbf_derivatives + parameter_dict["cbf_kappa_gain"]*cbf_values
+        # cbf_inv_penalty = torch.clamp(cbf_inv_penalty, max=0.0)
+        # cbf_inv_penalty *= parameter_dict["cbf_invariance_penalty_magnitude"]
+        cbf_inv_penalty = torch.zeros_like(self.pos_error_vehicle_frame[:, 0])
+        # TODO: Tune the cbf invariance penalty, to be
+        # a) comparable to the other penalties
+        # b) consider exponential penalty
+        # c) using high enought value to maybe guarantee that the CBF is satisfied
+        if wandb.run is not None:
+            wandb.log({"cbf_invariance_penalty": cbf_inv_penalty.mean()})
         return compute_reward(
             self.pos_error_vehicle_frame,
             self.pos_error_vehicle_frame_prev,
             obs_dict["crashes"],
             obs_dict["robot_actions"],
             obs_dict["robot_prev_actions"],
-            cbf_derivatives,
-            cbf_values,
+            cbf_inv_penalty,
             self.curriculum_progress_fraction,
             self.task_config.reward_parameters
         )
@@ -460,12 +486,11 @@ def compute_reward(
     crashes,
     action,
     prev_action,
-    cbf_derivative,
-    cbf_value,
+    cbf_inv_penalty,
     curriculum_progress_fraction,
-    parameter_dict,
+    parameter_dict
 ):
-    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, float, Dict[str, Tensor]) -> Tuple[Tensor, Tensor]
+    # type: (Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, float, Dict[str, Tensor]) -> Tuple[Tensor, Tensor]
     MULTIPLICATION_FACTOR_REWARD = (1.0 + (2.0) * curriculum_progress_fraction) * 3.0
     dist = torch.norm(pos_error, dim=1)
     prev_dist_to_goal = torch.norm(prev_pos_error, dim=1)
@@ -517,13 +542,6 @@ def compute_reward(
         action[:, 3],
     )
     absolute_action_penalty = x_absolute_penalty + z_absolute_penalty + yawrate_absolute_penalty
-    # TODO: Tune the cbf invariance penalty, to be
-    # a) comparable to the other penalties
-    # b) consider exponential penalty
-    # c) using high enought value to maybe guarantee that the CBF is satisfied
-    cbf_inv_penalty = cbf_derivative + parameter_dict["cbf_kappa_gain"]*cbf_value
-    cbf_inv_penalty = torch.clamp(cbf_inv_penalty, max=0.0)
-    cbf_inv_penalty *= parameter_dict["cbf_invariance_penalty_magnitude"]
     total_action_penalty = action_diff_penalty + absolute_action_penalty + cbf_inv_penalty
     # combined reward
     reward = (

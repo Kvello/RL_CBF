@@ -36,7 +36,7 @@ class CBFLidarConfig(BaseSensorConfig):
     euler_frame_rot_deg = [0.0, 0.0, 0.0]
 
     # Type of data to be returned from the sensor
-    normalize_range = False  # will be set to false when pointcloud is in world frame
+    normalize_range = True  # will be set to false when pointcloud is in world frame
 
     # do not change this.
     normalize_range = (
@@ -50,7 +50,7 @@ class CBFLidarConfig(BaseSensorConfig):
         max_range if normalize_range == True else -1.0
     )  # Will be [-1]U[0,1] if normalize_range is True, otherwise will be value set by user in place of -1.0
     near_out_of_range_value = (
-        -max_range if normalize_range == True else -1.0
+        0 if normalize_range == True else -1.0
     )  # Will be [-1]U[0,1] if normalize_range is True, otherwise will be value set by user in place of -1.0
 
     # randomize placement of the sensor
