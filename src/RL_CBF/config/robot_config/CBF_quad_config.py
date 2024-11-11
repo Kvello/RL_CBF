@@ -3,9 +3,7 @@ from aerial_gym.config.robot_config.base_quad_config import BaseQuadCfg
 from aerial_gym.config.sensor_config.camera_config.base_depth_camera_config import (
     BaseDepthCameraConfig,
 )
-from aerial_gym.config.sensor_config.lidar_config.base_lidar_config import (
-    BaseLidarConfig,
-)
+from ..sensor_config.lidar_config.CBF_lidar_config import CBFLidarConfig
 from aerial_gym.config.sensor_config.lidar_config.osdome_64_config import OSDome_64_Config
 from aerial_gym.config.sensor_config.imu_config.base_imu_config import BaseImuConfig
 
@@ -16,7 +14,7 @@ class CBFQuadCfg(BaseQuadCfg):
         camera_config = BaseDepthCameraConfig
 
         enable_lidar = True
-        lidar_config = BaseLidarConfig  # OSDome_64_Config
+        lidar_config = CBFLidarConfig  # OSDome_64_Config
 
         enable_imu = False
         imu_config = BaseImuConfig 

@@ -4,7 +4,7 @@ import torch
 import numpy as np
 from gym.spaces import Dict, Box
 from aerial_gym.utils.vae.vae_image_encoder import VAEImageEncoder
-from aerial_gym.config.sensor_config.lidar_config.base_lidar_config import BaseLidarConfig
+from ..config.sensor_config.lidar_config.CBF_lidar_config import CBFLidarConfig
 from aerial_gym.utils.math import *
 from aerial_gym.utils.logging import CustomLogger
 from exponential_CBF_quadrotor.C_safety_filters.Composite_first_order_CBF import FirstOrderCompositeQuadCollisionCBF
@@ -13,30 +13,28 @@ logger = CustomLogger("CBF_navigation_task")
 class LiDARDownsampler(torch.nn.Module):
     def __init__(self,width = 32, height = 8):
         super(LiDARDownsampler, self).__init__()
-        # TODO:
-        # Make the downsampling kernel size and stride as a parameter
-        # as a function of the output and input size
-        downsample_factor_width = round(BaseLidarConfig.width/width)
-        downsample_factor_height = round(BaseLidarConfig.height/height)
-        self.normalize = torch.nn.LayerNorm((height,width),device=torch.device("cuda:0"))
+        downsample_factor_width = round(CBFLidarConfig.width/width)
+        downsample_factor_height = round(CBFLidarConfig.height/height)
         self.downsample = torch.nn.MaxPool2d(kernel_size=(downsample_factor_height,
                                                           downsample_factor_width),)
         self.direction_map = None
         self.width = width
         self.height = height
+        self.range_limits = (CBFLidarConfig.min_range,CBFLidarConfig.max_range)
     def forward(self, x):
         # Normalize before or after downsampling?
-        x = -self.downsample(-x)
-        ret = self.normalize(x).reshape(-1,self.width*self.height)
+        # min-max normalization
+        x = (x-self.range_limits[0])/(self.range_limits[1]-self.range_limits[0])
+        ret = -self.downsample(-x)
         return ret
     def get_displacements(self,lidar_image)->torch.Tensor:
         # TODO: test this function
         if(self.direction_map == None):
-            theta_angles = torch.linspace(BaseLidarConfig.horizontal_fov_deg_min,
-                                          BaseLidarConfig.horizontal_fov_deg_max,
+            theta_angles = torch.linspace(CBFLidarConfig.horizontal_fov_deg_min,
+                                          CBFLidarConfig.horizontal_fov_deg_max,
                                           self.width,device=lidar_image.device)
-            phi_angles = torch.linspace(BaseLidarConfig.vertical_fov_deg_min,
-                                        BaseLidarConfig.vertical_fov_deg_max,
+            phi_angles = torch.linspace(CBFLidarConfig.vertical_fov_deg_min,
+                                        CBFLidarConfig.vertical_fov_deg_max,
                                         self.height,device=lidar_image.device)
             angle_space_p, angle_space_t = torch.meshgrid(phi_angles, theta_angles)
             self.direction_map = torch.stack([torch.cos(angle_space_t)*torch.cos(angle_space_p),
