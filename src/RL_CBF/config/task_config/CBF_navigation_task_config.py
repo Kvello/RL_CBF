@@ -1,20 +1,47 @@
 from aerial_gym.config.task_config.navigation_task_config import task_config
 from exponential_CBF_quadrotor.C_safety_filters.Composite_ECBF_safety_filter_efficient import QuadrotorCompositeCBFSafetyFilterEfficient
+from vae_lidar import LIDAR_VAE_DIRECTORY
 from aerial_gym import AERIAL_GYM_DIRECTORY
+from ..sensor_config.lidar_config.CBF_lidar_config import CBFLidarConfig
 import torch
 
 class task_config:
+    class vae_config:
+        use_camera_vae = False
+        use_lidar_vae = True
+        latent_dims = 128
+        model_file = (
+            LIDAR_VAE_DIRECTORY
+            + "/vae_lidar.pth"
+        )
+        # model_file = (
+        #     AERIAL_GYM_DIRECTORY
+        #     + "/aerial_gym/utils/vae/weights/ICRA_test_set_more_sim_data_kld_beta_3_LD_64_epoch_49.pth"
+        # )
+        model_folder = AERIAL_GYM_DIRECTORY
+        image_size = (CBFLidarConfig.height, CBFLidarConfig.width)
+        #image_res = (270, 480)
+        #interpolation_mode = "nearest"
+        #return_sampled_latent = True
+
     seed = -1
     sim_name = "base_sim"
     env_name = "env_with_obstacles"
     robot_name = "CBF_quadrotor"
-    controller_name = "lee_attitude_control"
+    controller_name = "lee_velocity_control"
     args = {}
     num_envs = 1024
     use_warp = True
     headless = True
     device = "cuda:0"
-    observation_space_dim = 13 + 4 + 32*8 # root_state + action_dim _ + downsampled_lidar_dims + CBF_dim
+    range_cbf_img_size = {
+        "height": 16,
+        "width": 64,
+    }
+    CBF_safe_dist = CBFLidarConfig.min_range + 0.05
+    include_cbf_invariance_penalty = False
+    plot_cbf_invariance_penalty = True
+    observation_space_dim = 13 + 4 + vae_config.latent_dims #+1+1# root_state + action_dim _ + downsampled_lidar_dims + CBF_dim + CBF_derivative_dim
     privileged_observation_space_dim = 0
     action_space_dim = 4
     episode_len_steps = 100  # real physics time for simulation is this value multiplied by sim.dt
@@ -26,7 +53,6 @@ class task_config:
 
     target_min_ratio = [0.90, 0.1, 0.1]  # target ratio w.r.t environment bounds in x,y,z
     target_max_ratio = [0.94, 0.90, 0.90]  # target ratio w.r.t environment bounds in x,y,z
-
     reward_parameters = {
         "pos_reward_magnitude": 5.0,
         "pos_reward_exponent": 1.0 / 3.5,
@@ -46,19 +72,9 @@ class task_config:
         "yawrate_absolute_action_penalty_magnitude": 1.5,
         "yawrate_absolute_action_penalty_exponent": 2.0,
         "collision_penalty": -20.0,
+        "cbf_kappa_gain" : 1.0,
+        "cbf_invariance_penalty_magnitude" : 10.0,
     }
-
-    class vae_config:
-        use_vae = True
-        latent_dims = 64
-        model_file = (
-            AERIAL_GYM_DIRECTORY
-            + "/aerial_gym/utils/vae/weights/ICRA_test_set_more_sim_data_kld_beta_3_LD_64_epoch_49.pth"
-        )
-        model_folder = AERIAL_GYM_DIRECTORY
-        image_res = (270, 480)
-        interpolation_mode = "nearest"
-        return_sampled_latent = True
 
     class curriculum:
         min_level = 10
@@ -79,6 +95,7 @@ class task_config:
     def action_transformation_function(action):
         clamped_action = torch.clamp(action, -1.0, 1.0)
         max_speed = 2.0  # [m/s]
+        max_yawrate = torch.pi / 3  # [rad/s]
         max_inclination_angle = torch.pi / 4  # [rad]
 
         clamped_action[:, 0] += 1.0
@@ -99,4 +116,5 @@ class task_config:
             * max_speed
             / 2.0
         )
+        processed_action[:, 3] = clamped_action[:, 2] * max_yawrate
         return processed_action
