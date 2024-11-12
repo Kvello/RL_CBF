@@ -7,23 +7,22 @@ import torch
 
 class task_config:
     class vae_config:
-        use_camera_vae = True
-        use_lidar_vae = False
-        latent_dims = 64
-        dropout_rate = 0.1
-        # model_file = (
-        #     LIDAR_VAE_DIRECTORY
-        #     + "/vae_lidar.pth"
-        # )
+        use_camera_vae = False
+        use_lidar_vae = True
+        latent_dims = 128
         model_file = (
-            AERIAL_GYM_DIRECTORY
-            + "/aerial_gym/utils/vae/weights/ICRA_test_set_more_sim_data_kld_beta_3_LD_64_epoch_49.pth"
+            LIDAR_VAE_DIRECTORY
+            + "/vae_lidar.pth"
         )
+        # model_file = (
+        #     AERIAL_GYM_DIRECTORY
+        #     + "/aerial_gym/utils/vae/weights/ICRA_test_set_more_sim_data_kld_beta_3_LD_64_epoch_49.pth"
+        # )
         model_folder = AERIAL_GYM_DIRECTORY
-        #image_size = (CBFLidarConfig.height, CBFLidarConfig.width)
-        image_res = (270, 480)
-        interpolation_mode = "nearest"
-        return_sampled_latent = True
+        image_size = (CBFLidarConfig.height, CBFLidarConfig.width)
+        #image_res = (270, 480)
+        #interpolation_mode = "nearest"
+        #return_sampled_latent = True
 
     seed = -1
     sim_name = "base_sim"
@@ -41,6 +40,7 @@ class task_config:
     }
     CBF_safe_dist = CBFLidarConfig.min_range + 0.05
     include_cbf_invariance_penalty = False
+    plot_cbf_invariance_penalty = True
     observation_space_dim = 13 + 4 + vae_config.latent_dims #+1+1# root_state + action_dim _ + downsampled_lidar_dims + CBF_dim + CBF_derivative_dim
     privileged_observation_space_dim = 0
     action_space_dim = 4
@@ -73,7 +73,7 @@ class task_config:
         "yawrate_absolute_action_penalty_exponent": 2.0,
         "collision_penalty": -20.0,
         "cbf_kappa_gain" : 1.0,
-        "cbf_invariance_penalty_magnitude" : 100.0,
+        "cbf_invariance_penalty_magnitude" : 10.0,
     }
 
     class curriculum:

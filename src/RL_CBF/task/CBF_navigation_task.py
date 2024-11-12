@@ -99,9 +99,13 @@ class CBFNavigationTask(BaseTask):
         if self.task_config.vae_config.use_lidar_vae:
             self.vae_model = VAELidar(size_latent=self.task_config.vae_config.latent_dims,
                                       shape_imgs=self.task_config.vae_config.image_size,
-                                      dropout_rate=task_config.vae_config.dropout_rate,
                                       filename=self.task_config.vae_config.model_file,
                                       device=self.device)
+            self.range_latents = torch.zeros(
+                (self.sim_env.num_envs, self.task_config.vae_config.latent_dims),
+                device=self.device,
+                requires_grad=False,
+            )
         elif self.task_config.vae_config.use_camera_vae:
             self.vae_model = VAEImageEncoder(config=self.task_config.vae_config, 
                                              device=self.device)
@@ -434,7 +438,7 @@ class CBFNavigationTask(BaseTask):
             robot_vehicle_orientation, (target_position - robot_position)
         )
         parameter_dict = self.task_config.reward_parameters
-        if self.task_config.include_cbf_invariance_penalty:
+        if self.task_config.plot_cbf_invariance_penalty or self.task_config.include_cbf_invariance_penalty:
             cbf_values = self.collision_cbf.get_composite_cbf_value(
                 robot_position,
                 disp = self.downsampled_lidar_displacements
@@ -446,14 +450,15 @@ class CBFNavigationTask(BaseTask):
             )
             cbf_inv_penalty = cbf_derivatives + parameter_dict["cbf_kappa_gain"]*cbf_values
             cbf_inv_penalty = torch.clamp(cbf_inv_penalty, max=0.0)
+            # TODO: Tune the cbf invariance penalty, to be
+            # a) comparable to the other penalties
+            # b) consider exponential penalty
+            # c) using high enought value to maybe guarantee that the CBF is satisfied
+            if wandb.run is not None and self.task_config.plot_cbf_invariance_penalty:
+                wandb.log({"cbf_invariance_penalty": cbf_inv_penalty.mean()})
             cbf_inv_penalty *= parameter_dict["cbf_invariance_penalty_magnitude"]
+        if self.task_config.include_cbf_invariance_penalty == False:
             cbf_inv_penalty = torch.zeros_like(self.pos_error_vehicle_frame[:, 0])
-        # TODO: Tune the cbf invariance penalty, to be
-        # a) comparable to the other penalties
-        # b) consider exponential penalty
-        # c) using high enought value to maybe guarantee that the CBF is satisfied
-        if wandb.run is not None:
-            wandb.log({"cbf_invariance_penalty": cbf_inv_penalty.mean()})
         return compute_reward(
             self.pos_error_vehicle_frame,
             self.pos_error_vehicle_frame_prev,
