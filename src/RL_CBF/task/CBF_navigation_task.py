@@ -321,18 +321,19 @@ class CBFNavigationTask(BaseTask):
         # Normalize the lidar observation(min-max normalization)
         with torch.no_grad():
             if self.task_config.vae_config.use_lidar_vae:
-                _,means,stds= self.vae_model(lidar_obs.unsqueeze(1))
-                self.range_latents[:] = means + torch.randn_like(stds)*stds
-            elif self.task_config.vae_config.use_camera_vae:
-                self.range_latents[:] = self.vae_model.encode(lidar_obs)
+                means, stds= self.vae_model(lidar_obs.unsqueeze(1))
+                self.range_latents[:] = means
+            else:
+                self.range_latents[:] = lidar_obs
         # original_img = lidar_obs[0].cpu().numpy()
-        # downsampled_img = self.downsampled_lidar[0].reshape(6,16).cpu().numpy()
+        # decoded_img = self.vae_model.decode(self.range_latents[0].unsqueeze(0))
+        # decoded_img = decoded_img[0].squeeze(0).cpu().numpy()
         # if not hasattr(self, "img_ctr"):
         #     self.img_ctr = 0
         # self.img_ctr += 1
         # import matplotlib.pyplot as plt
         # plt.imsave(f"original{self.img_ctr}.png", original_img, vmin=0, vmax=1)
-        # plt.imsave(f"downsampled{self.img_ctr}.png", downsampled_img, vmin=0, vmax=1)
+        # plt.imsave(f"decoded{self.img_ctr}.png", decoded_img, vmin=0, vmax=1)
         # Scale the lidar data to obtain the real range values
         lidar_obs_scaled = lidar_obs*(lidar_range_limits[1]-lidar_range_limits[0])\
             +lidar_range_limits[0]
