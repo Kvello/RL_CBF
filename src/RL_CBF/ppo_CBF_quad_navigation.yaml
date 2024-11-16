@@ -48,7 +48,7 @@ params:
     gamma: 0.98
     tau: 0.95
     ppo: True
-    learning_rate: 1e-4
+    learning_rate: 1e-5
     lr_schedule: adaptive
     kl_threshold: 0.016
     save_best_after: 10
