@@ -39,7 +39,7 @@ class task_config:
         "width": 64,
     }
     CBF_safe_dist = CBFLidarConfig.min_range + 0.05
-    include_cbf_invariance_penalty = True
+    include_cbf_invariance_penalty = False
     plot_cbf_invariance_penalty = True
     observation_space_dim = 13 + 4 + vae_config.latent_dims #+1+1# root_state + action_dim _ + downsampled_lidar_dims + CBF_dim + CBF_derivative_dim
     privileged_observation_space_dim = 0
@@ -71,7 +71,7 @@ class task_config:
         "z_absolute_action_penalty_exponent": 1.0,
         "yawrate_absolute_action_penalty_magnitude": 1.5,
         "yawrate_absolute_action_penalty_exponent": 2.0,
-        "collision_penalty": -20.0,
+        "collision_penalty": -200.0,
         "cbf_kappa_gain" : 10.0,
         "cbf_invariance_penalty_magnitude" : 10.0,
     }
