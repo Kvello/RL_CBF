@@ -19,8 +19,8 @@ class CBFLidarConfig(BaseSensorConfig):
     vertical_fov_deg_max = +45
 
     # min and max range do not match with the real sensor, but here we get to limit it for our convenience
-    max_range = 10.0
-    min_range = 0.2
+    max_range = 5.0
+    min_range = 0
 
     # Type of lidar (range, pointcloud, segmentation)
     # You can combine: (range+segmentation), (pointcloud+segmentation)
@@ -66,5 +66,5 @@ class CBFLidarConfig(BaseSensorConfig):
 
     class sensor_noise:
         enable_sensor_noise = False
-        pixel_dropout_prob = 0.01
-        pixel_std_dev_multiplier = 0.01
+        pixel_dropout_prob = 0.00
+        pixel_std_dev_multiplier = 0.00
