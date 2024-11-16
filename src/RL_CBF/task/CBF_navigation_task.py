@@ -420,7 +420,6 @@ class CBFNavigationTask(BaseTask):
                 robot_lin_vel_command,
                 disp= self.downsampled_lidar_displacements
             )
-            print("cbf derivatives: ",cbf_derivatives)
             cbf_inv_penalty = cbf_derivatives + parameter_dict["cbf_kappa_gain"]*cbf_values
             cbf_inv_penalty = torch.clamp(cbf_inv_penalty, max=0.0)
             # TODO: Tune the cbf invariance penalty, to be
