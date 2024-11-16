@@ -41,3 +41,43 @@ def test_get_displacements(lidar_cbf):
                           torch.sin(phi)]]], device=lidar_cbf.device)
     displacements = lidar_cbf.get_displacements(dummy_lidar)
     assert torch.allclose(displacements, dir)
+    dummy_lidar[0, 0, 0] = 2.0
+    dummy_lidar[0, -1,-1] = 1.0
+    # We know this pixel corresponds to the right-bottom corner of the fov
+    # So the angles should be (-45, 180) in degrees
+    theta = torch.deg2rad(torch.tensor([DummyConfig.horizontal_fov_deg_max]))
+    phi = torch.deg2rad(torch.tensor([DummyConfig.vertical_fov_deg_min]))
+    dir = torch.tensor([[[torch.cos(theta) * torch.cos(phi), 
+                          torch.sin(theta) * torch.cos(phi),
+                          torch.sin(phi)]]], device=lidar_cbf.device)
+    displacements = lidar_cbf.get_displacements(dummy_lidar)
+    assert torch.allclose(displacements, dir)
+    dummy_lidar[0, -1, -1] = 2.0
+    dummy_lidar[0, DummyConfig.height//2, DummyConfig.width//2] = 1.0
+    # We know this pixel corresponds to the center of the fov
+    # So the angles should be approx(0, 0) in degrees
+    vfov_min = DummyConfig.vertical_fov_deg_min
+    vfov_max = DummyConfig.vertical_fov_deg_max
+    hfov_min = DummyConfig.horizontal_fov_deg_min
+    hfov_max = DummyConfig.horizontal_fov_deg_max
+    round_off_err_phi = 0 if DummyConfig.height + 1 % 2 == 0 else -(vfov_max-vfov_min)/(2*DummyConfig.height)
+    round_off_err_theta = 0 if DummyConfig.width + 1 % 2 == 0 else (hfov_max-hfov_min)/(2*DummyConfig.width)
+    phi = torch.deg2rad(torch.tensor([round_off_err_phi]))
+    theta = torch.deg2rad(torch.tensor([round_off_err_theta]))
+    dir = torch.tensor([[[torch.cos(theta) * torch.cos(phi), 
+                          torch.sin(theta) * torch.cos(phi),
+                          torch.sin(phi)]]], device=lidar_cbf.device)
+    displacements = lidar_cbf.get_displacements(dummy_lidar)
+    assert torch.allclose(displacements, dir,rtol = 1e-2)
+
+    dummy_lidar[0, DummyConfig.height//2, DummyConfig.width//2] = 2.0
+    dummy_lidar[0, 0, DummyConfig.width//2] = 1.0
+    # This pixel corresponds to the top center of the fov
+    # So the angles should be (0, -180) in degrees
+    theta = torch.deg2rad(torch.tensor([round_off_err_theta]))
+    phi = torch.deg2rad(torch.tensor([DummyConfig.vertical_fov_deg_max]))
+    dir = torch.tensor([[[torch.cos(theta) * torch.cos(phi), 
+                          torch.sin(theta) * torch.cos(phi),
+                          torch.sin(phi)]]], device=lidar_cbf.device)
+    displacements = lidar_cbf.get_displacements(dummy_lidar)
+    assert torch.allclose(displacements, dir,rtol = 1e-2)

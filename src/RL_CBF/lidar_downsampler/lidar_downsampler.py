@@ -35,6 +35,7 @@ class LiDARDownsampler(torch.nn.Module):
     def get_displacements(self,lidar_images)->torch.Tensor:
         """
         Downsamples the lidar image and returns the displacements in the vehicle frame
+        Assumes ENU coordinate system
         Args:
             lidar_images: torch.Tensor of shape (batch_size, img_height, img_width). The original lidar images
         Returns:
@@ -44,10 +45,6 @@ class LiDARDownsampler(torch.nn.Module):
         downsampled = -downsampled
         row_indices = indices // self.img_width
         col_indices = indices % self.img_width
-        print("row_indices",row_indices)
-        print("col_indices",col_indices)
         downsampled_directions = self.direction_map[row_indices, col_indices]
-        print("downsampled_directions",downsampled_directions)
-        print("downsampled",downsampled)
         displacements = downsampled*downsampled_directions
         return displacements.reshape(-1, self.downsampled_height*self.downsampled_width, 3)
