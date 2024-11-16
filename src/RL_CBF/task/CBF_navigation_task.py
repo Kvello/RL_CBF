@@ -9,39 +9,10 @@ from config.sensor_config.lidar_config.CBF_lidar_config import CBFLidarConfig
 from aerial_gym.utils.math import *
 from aerial_gym.utils.logging import CustomLogger
 from exponential_CBF_quadrotor.C_safety_filters.Composite_first_order_CBF import FirstOrderCompositeQuadCollisionCBF
+from RL_CBF.lidar_downsampler.lidar_downsampler import LiDARDownsampler
 import wandb
 logger = CustomLogger("CBF_navigation_task")
 
-class LiDARCBF(torch.nn.Module):
-    def __init__(self,width = 32, height = 8):
-        super(LiDARCBF, self).__init__()
-        downsample_factor_width = round(CBFLidarConfig.width/width)
-        downsample_factor_height = round(CBFLidarConfig.height/height)
-        self.downsample = torch.nn.MaxPool2d(kernel_size=(downsample_factor_height,
-                                                          downsample_factor_width),)
-        self.direction_map = None
-        self.width = width
-        self.height = height
-    def forward(self, x):
-        # Normalize before or after downsampling?
-        ret = -self.downsample(-x)
-        return ret
-    def get_displacements(self,lidar_image)->torch.Tensor:
-        # TODO: test this function
-        if(self.direction_map == None):
-            theta_angles = torch.linspace(CBFLidarConfig.horizontal_fov_deg_min,
-                                          CBFLidarConfig.horizontal_fov_deg_max,
-                                          self.width,device=lidar_image.device)
-            phi_angles = torch.linspace(CBFLidarConfig.vertical_fov_deg_min,
-                                        CBFLidarConfig.vertical_fov_deg_max,
-                                        self.height,device=lidar_image.device)
-            angle_space_p, angle_space_t = torch.meshgrid(phi_angles, theta_angles)
-            self.direction_map = torch.stack([torch.cos(angle_space_t)*torch.cos(angle_space_p),
-                                              torch.sin(angle_space_t)*torch.cos(angle_space_p),
-                                              torch.sin(angle_space_p)], dim = -1)
-        ranges = lidar_image.reshape(-1, self.height, self.width)
-        displacements = ranges.unsqueeze(-1) * self.direction_map
-        return displacements.reshape(-1, self.height*self.width, 3)
 # Simple RL task with CBF based safety filter
 class CBFNavigationTask(BaseTask):
     def __init__(
@@ -60,7 +31,7 @@ class CBFNavigationTask(BaseTask):
             task_config.use_warp = use_warp
         super().__init__(task_config)
         self.device = task_config.device
-        self.lidar_cbf_data = LiDARCBF(
+        self.lidar_cbf_data = LiDARDownsampler(
             task_config.range_cbf_img_size["width"], 
             task_config.range_cbf_img_size["height"]
         )
@@ -119,8 +90,8 @@ class CBFNavigationTask(BaseTask):
             self.vae_model = lambda x: x
         self.downsampled_lidar_displacements = torch.zeros(
             (self.sim_env.num_envs, 
-             self.lidar_cbf_data.width*self.lidar_cbf_data.height
-             ,3), device=self.device, requires_grad=False
+             self.lidar_cbf_data.downsampled_width*self.lidar_cbf_data.downsampled_height,3),
+             device=self.device, requires_grad=False
         )
         # Get the dictionary once from the environment and use it to get the observations later.
         # This is to avoid constant retuning of data back anf forth across functions as the tensors update and can be read in-place.
@@ -183,7 +154,7 @@ class CBFNavigationTask(BaseTask):
             eps = task_config.CBF_safe_dist,
             num_obstacles=task_config.range_cbf_img_size["width"]\
                 *task_config.range_cbf_img_size["height"],
-            kappa=1e2)
+            kappa=1e1)
     def close(self):
         self.sim_env.delete_env()
 
@@ -337,9 +308,8 @@ class CBFNavigationTask(BaseTask):
         # Scale the lidar data to obtain the real range values
         lidar_obs_scaled = lidar_obs*(lidar_range_limits[1]-lidar_range_limits[0])\
             +lidar_range_limits[0]
-        downsampled_lidar = self.lidar_cbf_data(lidar_obs_scaled)
         self.downsampled_lidar_displacements[:] = \
-            self.lidar_cbf_data.get_displacements(downsampled_lidar)
+            self.lidar_cbf_data.get_displacements(lidar_obs_scaled)
     def step(self, actions):
         # this uses the action, gets observations
         # calculates rewards, returns tuples
@@ -444,11 +414,14 @@ class CBFNavigationTask(BaseTask):
                 robot_position,
                 disp = self.downsampled_lidar_displacements
             )
+            print("lidarmeas: ",self.downsampled_lidar_displacements)
+            print("cbf values: ",cbf_values)
             cbf_derivatives = self.collision_cbf.get_h_derivative(
                 robot_position,
                 robot_lin_vel_command,
                 disp= self.downsampled_lidar_displacements
             )
+            print("cbf derivatives: ",cbf_derivatives)
             cbf_inv_penalty = cbf_derivatives + parameter_dict["cbf_kappa_gain"]*cbf_values
             cbf_inv_penalty = torch.clamp(cbf_inv_penalty, max=0.0)
             # TODO: Tune the cbf invariance penalty, to be
