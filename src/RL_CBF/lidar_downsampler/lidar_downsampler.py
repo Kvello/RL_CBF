@@ -46,5 +46,5 @@ class LiDARDownsampler(torch.nn.Module):
         row_indices = indices // self.img_width
         col_indices = indices % self.img_width
         downsampled_directions = self.direction_map[row_indices, col_indices]
-        displacements = downsampled*downsampled_directions
+        displacements = downsampled.unsqueeze(-1)*downsampled_directions
         return displacements.reshape(-1, self.downsampled_height*self.downsampled_width, 3)
