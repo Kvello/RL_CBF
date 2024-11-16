@@ -9,7 +9,7 @@ from config.sensor_config.lidar_config.CBF_lidar_config import CBFLidarConfig
 from aerial_gym.utils.math import *
 from aerial_gym.utils.logging import CustomLogger
 from exponential_CBF_quadrotor.C_safety_filters.Composite_first_order_CBF import FirstOrderCompositeQuadCollisionCBF
-from RL_CBF.lidar_downsampler.lidar_downsampler import LiDARDownsampler
+from lidar_downsampler.lidar_downsampler import LiDARDownsampler
 import wandb
 logger = CustomLogger("CBF_navigation_task")
 
@@ -32,8 +32,9 @@ class CBFNavigationTask(BaseTask):
         super().__init__(task_config)
         self.device = task_config.device
         self.lidar_cbf_data = LiDARDownsampler(
-            task_config.range_cbf_img_size["width"], 
-            task_config.range_cbf_img_size["height"]
+            sensor_config= CBFLidarConfig,
+            width = task_config.range_cbf_img_size["width"], 
+            height = task_config.range_cbf_img_size["height"]
         )
         # Put all reward parameters to torch tensor on device
         for key in self.task_config.reward_parameters.keys():
@@ -414,8 +415,6 @@ class CBFNavigationTask(BaseTask):
                 robot_position,
                 disp = self.downsampled_lidar_displacements
             )
-            print("lidarmeas: ",self.downsampled_lidar_displacements)
-            print("cbf values: ",cbf_values)
             cbf_derivatives = self.collision_cbf.get_h_derivative(
                 robot_position,
                 robot_lin_vel_command,
