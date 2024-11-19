@@ -22,7 +22,7 @@ params:
           val: 0
         fixed_sigma: True
     mlp:
-      units: [256,128,64]
+      units: [256,128,128,64,64]
       d2rl: False
       activation: elu
       initializer:
@@ -37,7 +37,7 @@ params:
   config:
     env_name: quad
     env_config:
-      num_envs: 8192
+      num_envs: 256
       
     name: gen_ppo
     reward_shaper:
@@ -48,7 +48,7 @@ params:
     gamma: 0.98
     tau: 0.95
     ppo: True
-    learning_rate: 1e-4
+    learning_rate: 5e-5
     lr_schedule: adaptive
     kl_threshold: 0.016
     save_best_after: 10
@@ -58,14 +58,14 @@ params:
     truncate_grads: True
     e_clip: 0.2
     clip_value: False
-    num_actors: 1024
-    horizon_length: 32
+    num_actors: 256
+    horizon_length: 64
     minibatch_size: 2048
     mini_epochs: 4
     critic_coef: 2
     normalize_input: True
     bounds_loss_coef: 0.0001
-    max_epochs: 250
+    max_epochs: 500
     normalize_value: True
     use_diagnostics: True
     value_bootstrap: True

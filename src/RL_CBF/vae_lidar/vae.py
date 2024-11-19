@@ -93,16 +93,14 @@ class Vae(torch.nn.Module):
         self.size_latent = size_latent
         self.shape_imgs = shape_imgs
         self.encoder = Encoder(self.nb_chan, size_latent, dropout_rate, filename, device)
+        self.decoder = Decoder(self.nb_chan, size_latent, shape_imgs, dropout_rate,filename, device)
         self.device = device
         
         if not filename.endswith('.pth'): filename += '.pth'
         weights = torch.load(filename, map_location=self.device, weights_only=False)
-        state_dict = weights
-        encoder_state_dict = {k: v for k, v in state_dict.items() if 'decoder' not in k}
-        encoder_state_dict = {k.replace('encoder.', ''): v for k, v in encoder_state_dict.items()}
+        self.load_state_dict(weights)
         self.to(self.device)
         self.eval()
-        self.encoder.load_state_dict(encoder_state_dict)
 
     def forward(self, input):
         ## encode
@@ -116,7 +114,8 @@ class Vae(torch.nn.Module):
             z_sampled = mean
 
         ## decode
-        #output = self.decoder(z_sampled)
-        output = 0
 
-        return output, mean, logvar
+        return mean, logvar
+    def decode(self, z_sampled):
+        output = self.decoder(z_sampled)
+        return output
