@@ -155,7 +155,8 @@ class CBFNavigationTask(BaseTask):
             eps = task_config.CBF_safe_dist,
             num_obstacles=task_config.range_cbf_img_size["width"]\
                 *task_config.range_cbf_img_size["height"],
-            kappa=1e1)
+            kappa=1e2,
+            gamma=1)
     def close(self):
         self.sim_env.delete_env()
 
