@@ -30,7 +30,7 @@ class task_config:
     robot_name = "CBF_quadrotor"
     controller_name = "lee_velocity_control"
     args = {}
-    num_envs = 1024
+    num_envs = 265
     use_warp = True
     headless = True
     device = "cuda:0"
@@ -38,7 +38,7 @@ class task_config:
         "height": 16,
         "width": 64,
     }
-    CBF_safe_dist = CBFLidarConfig.min_range + 0.05
+    CBF_safe_dist = CBFLidarConfig.min_range + 0.1
     include_cbf_invariance_penalty = False
     plot_cbf_invariance_penalty = True
     observation_space_dim = 13 + 4 + vae_config.latent_dims #+1+1# root_state + action_dim _ + downsampled_lidar_dims + CBF_dim + CBF_derivative_dim
@@ -71,9 +71,9 @@ class task_config:
         "z_absolute_action_penalty_exponent": 1.0,
         "yawrate_absolute_action_penalty_magnitude": 1.5,
         "yawrate_absolute_action_penalty_exponent": 2.0,
-        "collision_penalty": -200.0,
-        "cbf_kappa_gain" : 10.0,
-        "cbf_invariance_penalty_magnitude" : 10.0,
+        "collision_penalty": -50.0,
+        "cbf_kappa_gain" : 2.0,
+        "cbf_invariance_penalty_magnitude" : 50.0,
     }
 
     class curriculum:
