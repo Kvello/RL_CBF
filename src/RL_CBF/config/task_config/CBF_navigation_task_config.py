@@ -75,7 +75,7 @@ class task_config:
         "yawrate_absolute_action_penalty_magnitude": 1.5,
         "yawrate_absolute_action_penalty_exponent": 2.0,
         "collision_penalty": -50.0,
-        "cbf_correction_penalty_magnitude" : 50.0,
+        "cbf_correction_penalty_magnitude" : -50.0,
     }
 
     class curriculum:
