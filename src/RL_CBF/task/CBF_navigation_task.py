@@ -9,39 +9,10 @@ from config.sensor_config.lidar_config.CBF_lidar_config import CBFLidarConfig
 from aerial_gym.utils.math import *
 from aerial_gym.utils.logging import CustomLogger
 from exponential_CBF_quadrotor.C_safety_filters.Composite_first_order_CBF import FirstOrderCompositeQuadCollisionCBF
+from lidar_downsampler.lidar_downsampler import LiDARDownsampler
 import wandb
 logger = CustomLogger("CBF_navigation_task")
 
-class LiDARCBF(torch.nn.Module):
-    def __init__(self,width = 32, height = 8):
-        super(LiDARCBF, self).__init__()
-        downsample_factor_width = round(CBFLidarConfig.width/width)
-        downsample_factor_height = round(CBFLidarConfig.height/height)
-        self.downsample = torch.nn.MaxPool2d(kernel_size=(downsample_factor_height,
-                                                          downsample_factor_width),)
-        self.direction_map = None
-        self.width = width
-        self.height = height
-    def forward(self, x):
-        # Normalize before or after downsampling?
-        ret = -self.downsample(-x)
-        return ret
-    def get_displacements(self,lidar_image)->torch.Tensor:
-        # TODO: test this function
-        if(self.direction_map == None):
-            theta_angles = torch.linspace(CBFLidarConfig.horizontal_fov_deg_min,
-                                          CBFLidarConfig.horizontal_fov_deg_max,
-                                          self.width,device=lidar_image.device)
-            phi_angles = torch.linspace(CBFLidarConfig.vertical_fov_deg_min,
-                                        CBFLidarConfig.vertical_fov_deg_max,
-                                        self.height,device=lidar_image.device)
-            angle_space_p, angle_space_t = torch.meshgrid(phi_angles, theta_angles)
-            self.direction_map = torch.stack([torch.cos(angle_space_t)*torch.cos(angle_space_p),
-                                              torch.sin(angle_space_t)*torch.cos(angle_space_p),
-                                              torch.sin(angle_space_p)], dim = -1)
-        ranges = lidar_image.reshape(-1, self.height, self.width)
-        displacements = ranges.unsqueeze(-1) * self.direction_map
-        return displacements.reshape(-1, self.height*self.width, 3)
 # Simple RL task with CBF based safety filter
 class CBFNavigationTask(BaseTask):
     def __init__(
@@ -60,9 +31,10 @@ class CBFNavigationTask(BaseTask):
             task_config.use_warp = use_warp
         super().__init__(task_config)
         self.device = task_config.device
-        self.lidar_cbf_data = LiDARCBF(
-            task_config.range_cbf_img_size["width"], 
-            task_config.range_cbf_img_size["height"]
+        self.lidar_cbf_data = LiDARDownsampler(
+            sensor_config= CBFLidarConfig,
+            width = task_config.range_cbf_img_size["width"], 
+            height = task_config.range_cbf_img_size["height"]
         )
         # Put all reward parameters to torch tensor on device
         for key in self.task_config.reward_parameters.keys():
@@ -119,8 +91,8 @@ class CBFNavigationTask(BaseTask):
             self.vae_model = lambda x: x
         self.downsampled_lidar_displacements = torch.zeros(
             (self.sim_env.num_envs, 
-             self.lidar_cbf_data.width*self.lidar_cbf_data.height
-             ,3), device=self.device, requires_grad=False
+             self.lidar_cbf_data.downsampled_width*self.lidar_cbf_data.downsampled_height,3),
+             device=self.device, requires_grad=False
         )
         # Get the dictionary once from the environment and use it to get the observations later.
         # This is to avoid constant retuning of data back anf forth across functions as the tensors update and can be read in-place.
@@ -183,7 +155,8 @@ class CBFNavigationTask(BaseTask):
             eps = task_config.CBF_safe_dist,
             num_obstacles=task_config.range_cbf_img_size["width"]\
                 *task_config.range_cbf_img_size["height"],
-            kappa=1e2)
+            kappa=1e2,
+            gamma=1)
     def close(self):
         self.sim_env.delete_env()
 
@@ -321,24 +294,24 @@ class CBFNavigationTask(BaseTask):
         # Normalize the lidar observation(min-max normalization)
         with torch.no_grad():
             if self.task_config.vae_config.use_lidar_vae:
-                _,means,stds= self.vae_model(lidar_obs.unsqueeze(1))
-                self.range_latents[:] = means + torch.randn_like(stds)*stds
-            elif self.task_config.vae_config.use_camera_vae:
-                self.range_latents[:] = self.vae_model.encode(lidar_obs)
+                means, stds= self.vae_model(lidar_obs.unsqueeze(1))
+                self.range_latents[:] = means
+            else:
+                self.range_latents[:] = lidar_obs
         # original_img = lidar_obs[0].cpu().numpy()
-        # downsampled_img = self.downsampled_lidar[0].reshape(6,16).cpu().numpy()
+        # decoded_img = self.vae_model.decode(self.range_latents[0].unsqueeze(0))
+        # decoded_img = decoded_img[0].squeeze(0).cpu().numpy()
         # if not hasattr(self, "img_ctr"):
         #     self.img_ctr = 0
         # self.img_ctr += 1
         # import matplotlib.pyplot as plt
         # plt.imsave(f"original{self.img_ctr}.png", original_img, vmin=0, vmax=1)
-        # plt.imsave(f"downsampled{self.img_ctr}.png", downsampled_img, vmin=0, vmax=1)
+        # plt.imsave(f"decoded{self.img_ctr}.png", decoded_img, vmin=0, vmax=1)
         # Scale the lidar data to obtain the real range values
         lidar_obs_scaled = lidar_obs*(lidar_range_limits[1]-lidar_range_limits[0])\
             +lidar_range_limits[0]
-        downsampled_lidar = self.lidar_cbf_data(lidar_obs_scaled)
         self.downsampled_lidar_displacements[:] = \
-            self.lidar_cbf_data.get_displacements(downsampled_lidar)
+            self.lidar_cbf_data.get_displacements(lidar_obs_scaled)
     def step(self, actions):
         # this uses the action, gets observations
         # calculates rewards, returns tuples
@@ -434,6 +407,9 @@ class CBFNavigationTask(BaseTask):
         target_orientation = torch.zeros_like(robot_orientation, device=self.device)
         target_orientation[:, 3] = 1.0
         self.pos_error_vehicle_frame_prev[:] = self.pos_error_vehicle_frame
+        robot_lin_vel_command_robot_frame = quat_rotate_inverse(
+            robot_vehicle_orientation, robot_lin_vel_command
+        )
         self.pos_error_vehicle_frame[:] = quat_rotate_inverse(
             robot_vehicle_orientation, (target_position - robot_position)
         )
@@ -456,6 +432,7 @@ class CBFNavigationTask(BaseTask):
             # c) using high enought value to maybe guarantee that the CBF is satisfied
             if wandb.run is not None and self.task_config.plot_cbf_invariance_penalty:
                 wandb.log({"cbf_invariance_penalty": cbf_inv_penalty.mean()})
+                wandb.log({"cbf_values": cbf_values.mean()})
             cbf_inv_penalty *= parameter_dict["cbf_invariance_penalty_magnitude"]
         if self.task_config.include_cbf_invariance_penalty == False:
             cbf_inv_penalty = torch.zeros_like(self.pos_error_vehicle_frame[:, 0])
