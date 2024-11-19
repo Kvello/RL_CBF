@@ -294,8 +294,8 @@ class CBFNavigationTask(BaseTask):
         # Normalize the lidar observation(min-max normalization)
         with torch.no_grad():
             if self.task_config.vae_config.use_lidar_vae:
-                means, stds= self.vae_model(lidar_obs.unsqueeze(1))
-                self.range_latents[:] = means
+                means, logvar = self.vae_model(lidar_obs.unsqueeze(1))
+                self.range_latents[:] = means + torch.randn_like(means)*torch.exp(0.5*logvar)
             else:
                 self.range_latents[:] = lidar_obs
         # original_img = lidar_obs[0].cpu().numpy()
