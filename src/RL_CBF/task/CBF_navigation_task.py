@@ -273,6 +273,8 @@ class CBFNavigationTask(BaseTask):
             self.success_aggregate = 0
             self.crashes_aggregate = 0
             self.timeouts_aggregate = 0
+            if wandb.run is not None:
+                wandb.log({"Curriculum Level": self.curriculum_level})
 
     def action_transformation_function(self,action):
         clamped_action = torch.clamp(action, -1.0, 1.0)
