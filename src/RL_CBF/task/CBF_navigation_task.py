@@ -365,10 +365,6 @@ class CBFNavigationTask(BaseTask):
         self.infos["successes"] = successes
         self.infos["timeouts"] = timeouts
         self.infos["crashes"] = self.terminations
-        if wandb.run is not None:
-            wandb.log({"Success rate:", torch.sum(successes).item() / self.num_envs})
-            wandb.log({"Timeout rate:", torch.sum(timeouts).item() / self.num_envs})
-            wandb.log({"Crash rate:", torch.sum(self.terminations).item() / self.num_envs})
         self.logging_sanity_check(self.infos)
         self.check_and_update_curriculum_level(
             self.infos["successes"], self.infos["crashes"], self.infos["timeouts"]
