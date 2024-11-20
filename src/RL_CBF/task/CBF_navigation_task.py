@@ -402,11 +402,13 @@ class CBFNavigationTask(BaseTask):
         clamped_action = torch.clamp(action, -1.0, 1.0)
         max_velocity = self.task_config.max_velocity
         max_yawrate = self.task_config.max_yawrate
+        max_z_vel = self.task_config.max_heave_velocity
         processed_action = torch.zeros(
             (clamped_action.shape[0], 4), device=self.task_config.device, requires_grad=False
         )
-        processed_action[:, 0:3] = clamped_action[:, 0:3] * max_velocity
-        processed_action[:, 3] = clamped_action[:, 2] * max_yawrate
+        processed_action[:, 0:2] = clamped_action[:, 0:2] * max_velocity
+        processed_action[:, 2] = clamped_action[:, 2] * max_z_vel
+        processed_action[:, 3] = clamped_action[:, 3] * max_yawrate
         return processed_action
     def process_obs_for_task(self):
         self.task_obs["observations"][:, 0:3] = quat_rotate_inverse(
