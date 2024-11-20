@@ -302,20 +302,23 @@ class CBFNavigationTask(BaseTask):
             cbf_constraint = torch.clamp(cbf_constraint, max=0.0)
             wandb.log({"CBF constraint(unfiltered)": cbf_constraint.mean()})
             wandb.log({"CBF values": cbf_values.mean()})
-
-        safe_action = torch.zeros_like(processed_action)
-        alpha = self.task_config.cbf_kappa_gain
-        safe_action[:,0:3] = self.collision_cbf.get_safe_input(processed_action[:,0:3],
-                                                        x = position,
-                                                        disp = self.downsampled_lidar_displacements,
-                                                        alpha = alpha)
-        safe_action[:,3] = processed_action[:,3]
-        # Since we don't have input constraints in the CBF, we need to clamp the action
-        # Investigating how we can incorporate input constraints in the CBF is future work
-        safe_action[:,0:3] = torch.clamp(safe_action[:,0:3], -max_vel, max_vel)
-        correction_mag = torch.linalg.vector_norm(safe_action[:,0:3] - processed_action[:,0:3], dim=1)
-        if wandb.run is not None:
-            wandb.log({"Correction magnitude": correction_mag.mean()})
+        if self.task_config.filter_actions:
+            safe_action = torch.zeros_like(processed_action)
+            alpha = self.task_config.cbf_kappa_gain
+            safe_action[:,0:3] = self.collision_cbf.get_safe_input(processed_action[:,0:3],
+                                                            x = position,
+                                                            disp = self.downsampled_lidar_displacements,
+                                                            alpha = alpha)
+            safe_action[:,3] = processed_action[:,3]
+            # Since we don't have input constraints in the CBF, we need to clamp the action
+            # Investigating how we can incorporate input constraints in the CBF is future work
+            safe_action[:,0:3] = torch.clamp(safe_action[:,0:3], -max_vel, max_vel)
+            correction_mag = torch.linalg.vector_norm(safe_action[:,0:3] - processed_action[:,0:3], dim=1)
+            if wandb.run is not None:
+                wandb.log({"Correction magnitude": correction_mag.mean()})
+        else:
+            safe_action = processed_action
+            correction_mag = torch.zeros_like(processed_action[:,0])
         return safe_action, correction_mag
     def process_image_observation(self):
         image_obs = self.obs_dict["depth_range_pixels"].squeeze(1)

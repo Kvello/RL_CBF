@@ -42,6 +42,7 @@ class task_config:
     cbf_kappa_gain = 3.0
     plot_cbf_constraint = True
     penalize_cbf_corrections = True
+    filter_actions = True
     max_velocity = 2.0 # m/s max velocity in each direction x,y,z. Max speed is sqrt(3) times this
     max_yawrate = torch.pi / 3 # 60 degrees
     observation_space_dim = 13 + 4 + vae_config.latent_dims #+1+1# root_state + action_dim _ + downsampled_lidar_dims + CBF_dim + CBF_derivative_dim
