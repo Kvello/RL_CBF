@@ -273,6 +273,8 @@ class CBFNavigationTask(BaseTask):
             self.success_aggregate = 0
             self.crashes_aggregate = 0
             self.timeouts_aggregate = 0
+            if wandb.run is not None:
+                wandb.log({"Curriculum Level": self.curriculum_level})
 
     def process_image_observation(self):
         image_obs = self.obs_dict["depth_range_pixels"].squeeze(1)

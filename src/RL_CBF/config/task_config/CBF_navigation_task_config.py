@@ -85,13 +85,6 @@ class task_config:
         success_rate_for_increase = 0.7
         success_rate_for_decrease = 0.6
 
-        def update_curriculim_level(self, success_rate, current_level):
-            if success_rate > self.success_rate_for_increase:
-                return min(current_level + self.increase_step, self.max_level)
-            elif success_rate < self.success_rate_for_decrease:
-                return max(current_level - self.decrease_step, self.min_level)
-            return current_level
-
     def action_transformation_function(action):
         clamped_action = torch.clamp(action, -1.0, 1.0)
         max_speed = 2.0  # [m/s]
