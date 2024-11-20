@@ -432,7 +432,7 @@ class CBFNavigationTask(BaseTask):
             robot_vehicle_orientation, (target_position - robot_position)
         )
         parameter_dict = self.task_config.reward_parameters
-        if self.task_config.plot_cbf_invariance_penalty or self.task_config.include_cbf_invariance_penalty:
+        if self.task_config.plot_cbf_constraint or self.task_config.include_cbf_invariance_penalty:
             cbf_values = self.collision_cbf.get_composite_cbf_value(
                 robot_position,
                 disp = self.downsampled_lidar_displacements
@@ -448,9 +448,9 @@ class CBFNavigationTask(BaseTask):
             # a) comparable to the other penalties
             # b) consider exponential penalty
             # c) using high enought value to maybe guarantee that the CBF is satisfied
-            if wandb.run is not None and self.task_config.plot_cbf_invariance_penalty:
-                wandb.log({"cbf_invariance_penalty": cbf_inv_penalty.mean()})
-                wandb.log({"cbf_values": cbf_values.mean()})
+            if wandb.run is not None and self.task_config.plot_cbf_constraint:
+                wandb.log({"CBF invariance constraint": cbf_inv_penalty.mean()})
+                wandb.log({"CBF values": cbf_values.mean()})
             cbf_inv_penalty *= parameter_dict["cbf_invariance_penalty_magnitude"]
         if self.task_config.include_cbf_invariance_penalty == False:
             cbf_inv_penalty = torch.zeros_like(self.pos_error_vehicle_frame[:, 0])
