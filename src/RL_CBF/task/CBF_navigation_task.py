@@ -16,7 +16,13 @@ logger = CustomLogger("CBF_navigation_task")
 # Simple RL task with CBF based safety filter
 class CBFNavigationTask(BaseTask):
     def __init__(
-        self, task_config, seed=None, num_envs=None, headless=None, device=None, use_warp=None
+        self,
+        task_config, 
+        seed=None, 
+        num_envs=None, 
+        headless=None, 
+        device=None, 
+        use_warp=None
     ):
         # overwrite the params if user has provided them
         if seed is not None:
@@ -387,6 +393,16 @@ class CBFNavigationTask(BaseTask):
             self.infos,
         )
 
+    def action_transformation_function(self,action):
+        clamped_action = torch.clamp(action, -1.0, 1.0)
+        max_velocity = self.task_config.max_velocity
+        max_yawrate = self.task_config.max_yawrate
+        processed_action = torch.zeros(
+            (clamped_action.shape[0], 4), device=self.task_config.device, requires_grad=False
+        )
+        processed_action[:, 0:3] = clamped_action[:, 0:3] * max_velocity
+        processed_action[:, 3] = clamped_action[:, 2] * max_yawrate
+        return processed_action
     def process_obs_for_task(self):
         self.task_obs["observations"][:, 0:3] = quat_rotate_inverse(
             self.obs_dict["robot_vehicle_orientation"],
@@ -427,7 +443,7 @@ class CBFNavigationTask(BaseTask):
                 robot_lin_vel_command,
                 disp= self.downsampled_lidar_displacements
             )
-            cbf_inv_penalty = cbf_derivatives + parameter_dict["cbf_kappa_gain"]*cbf_values
+            cbf_inv_penalty = cbf_derivatives + self.task_config.cbf_kappa_gain*cbf_values
             cbf_inv_penalty = torch.clamp(cbf_inv_penalty, max=0.0)
             # TODO: Tune the cbf invariance penalty, to be
             # a) comparable to the other penalties
