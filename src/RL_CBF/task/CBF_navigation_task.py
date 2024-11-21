@@ -287,6 +287,9 @@ class CBFNavigationTask(BaseTask):
 
     def action_transformation_function(self,action):
         position = self.obs_dict["robot_position"]
+        # We have defined the action space to be between -1 and 1 for all the actions
+        action[0,:3] = action[0,:3]*self.task_config.max_velocity
+        action[0,3] = action[0,3]*self.task_config.max_yawrate
         if self.task_config.plot_cbf_constraint or self.task_config.penalize_cbf_constraint:
             cbf_values = self.collision_cbf.get_composite_cbf_value(
                 position,
@@ -312,7 +315,6 @@ class CBFNavigationTask(BaseTask):
                                                             disp = self.downsampled_lidar_displacements,
                                                             alpha = alpha)
             safe_action[:,3] = action[:,3]
-            # Since we don't have input constraints in the CBF, we need to clamp the action
             # Investigating how we can incorporate input constraints in the CBF is future work
             correction_mag = torch.linalg.vector_norm(safe_action[:,0:3] - action[:,0:3], dim=1)
             if wandb.run is not None:

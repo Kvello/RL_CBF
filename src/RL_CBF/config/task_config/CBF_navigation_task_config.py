@@ -44,6 +44,8 @@ class task_config:
     penalize_cbf_constraint = False
     penalize_cbf_corrections = True
     filter_actions = True
+    max_velocity = 2.0 # m/s max velocity in x,y,z directions
+    max_yawrate = 20.0*torch.pi/180.0 # rad/s max yawrate
     observation_space_dim = 13 + 4 + vae_config.latent_dims #+1+1# root_state + action_dim _ + downsampled_lidar_dims + CBF_dim + CBF_derivative_dim
     privileged_observation_space_dim = 0
     action_space_dim = 4
