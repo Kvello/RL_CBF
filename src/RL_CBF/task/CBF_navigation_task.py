@@ -16,7 +16,13 @@ logger = CustomLogger("CBF_navigation_task")
 # Simple RL task with CBF based safety filter
 class CBFNavigationTask(BaseTask):
     def __init__(
-        self, task_config, seed=None, num_envs=None, headless=None, device=None, use_warp=None
+        self,
+        task_config, 
+        seed=None, 
+        num_envs=None, 
+        headless=None, 
+        device=None, 
+        use_warp=None
     ):
         # overwrite the params if user has provided them
         if seed is not None:
@@ -275,6 +281,9 @@ class CBFNavigationTask(BaseTask):
             self.timeouts_aggregate = 0
             if wandb.run is not None:
                 wandb.log({"Curriculum Level": self.curriculum_level})
+                wandb.log({"Success Rate": success_rate})
+                wandb.log({"Crash Rate": crash_rate})
+                wandb.log({"Timeout Rate": timeout_rate})
 
     def action_transformation_function(self,action):
         clamped_action = torch.clamp(action, -1.0, 1.0)
@@ -401,7 +410,6 @@ class CBFNavigationTask(BaseTask):
         self.infos["successes"] = successes
         self.infos["timeouts"] = timeouts
         self.infos["crashes"] = self.terminations
-
         self.logging_sanity_check(self.infos)
         self.check_and_update_curriculum_level(
             self.infos["successes"], self.infos["crashes"], self.infos["timeouts"]
