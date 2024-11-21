@@ -41,6 +41,7 @@ class task_config:
     CBF_safe_dist = CBFLidarConfig.min_range + 0.4
     cbf_kappa_gain = 3.0
     plot_cbf_constraint = True
+    penalize_cbf_constraint = False
     penalize_cbf_corrections = True
     filter_actions = True
     observation_space_dim = 13 + 4 + vae_config.latent_dims #+1+1# root_state + action_dim _ + downsampled_lidar_dims + CBF_dim + CBF_derivative_dim
@@ -75,6 +76,7 @@ class task_config:
         "yawrate_absolute_action_penalty_exponent": 2.0,
         "collision_penalty": -50.0,
         "cbf_correction_penalty_magnitude" : -50.0,
+        "cbf_invariance_penalty_magnitude" : 50.0,
     }
 
     class curriculum:
