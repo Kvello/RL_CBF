@@ -38,9 +38,12 @@ class task_config:
         "height": 16,
         "width": 64,
     }
-    CBF_safe_dist = CBFLidarConfig.min_range + 0.1
-    include_cbf_invariance_penalty = False
-    plot_cbf_invariance_penalty = True
+    CBF_safe_dist = CBFLidarConfig.min_range + 0.4
+    cbf_kappa_gain = 3.0
+    plot_cbf_constraint = True
+    penalize_cbf_constraint = False
+    penalize_cbf_corrections = True
+    filter_actions = True
     observation_space_dim = 13 + 4 + vae_config.latent_dims #+1+1# root_state + action_dim _ + downsampled_lidar_dims + CBF_dim + CBF_derivative_dim
     privileged_observation_space_dim = 0
     action_space_dim = 4
@@ -72,7 +75,7 @@ class task_config:
         "yawrate_absolute_action_penalty_magnitude": 1.5,
         "yawrate_absolute_action_penalty_exponent": 2.0,
         "collision_penalty": -50.0,
-        "cbf_kappa_gain" : 2.0,
+        "cbf_correction_penalty_magnitude" : -50.0,
         "cbf_invariance_penalty_magnitude" : 50.0,
     }
 
@@ -84,30 +87,3 @@ class task_config:
         decrease_step = 1
         success_rate_for_increase = 0.7
         success_rate_for_decrease = 0.6
-
-    def action_transformation_function(action):
-        clamped_action = torch.clamp(action, -1.0, 1.0)
-        max_speed = 2.0  # [m/s]
-        max_yawrate = torch.pi / 3  # [rad/s]
-        max_inclination_angle = torch.pi / 4  # [rad]
-
-        clamped_action[:, 0] += 1.0
-
-        processed_action = torch.zeros(
-            (clamped_action.shape[0], 4), device=task_config.device, requires_grad=False
-        )
-        processed_action[:, 0] = (
-            clamped_action[:, 0]
-            * torch.cos(max_inclination_angle * clamped_action[:, 1])
-            * max_speed
-            / 2.0
-        )
-        processed_action[:, 1] = 0
-        processed_action[:, 2] = (
-            clamped_action[:, 0]
-            * torch.sin(max_inclination_angle * clamped_action[:, 1])
-            * max_speed
-            / 2.0
-        )
-        processed_action[:, 3] = clamped_action[:, 2] * max_yawrate
-        return processed_action

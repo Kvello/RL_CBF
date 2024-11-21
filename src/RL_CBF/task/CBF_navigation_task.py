@@ -16,7 +16,13 @@ logger = CustomLogger("CBF_navigation_task")
 # Simple RL task with CBF based safety filter
 class CBFNavigationTask(BaseTask):
     def __init__(
-        self, task_config, seed=None, num_envs=None, headless=None, device=None, use_warp=None
+        self,
+        task_config, 
+        seed=None, 
+        num_envs=None, 
+        headless=None, 
+        device=None, 
+        use_warp=None
     ):
         # overwrite the params if user has provided them
         if seed is not None:
@@ -121,7 +127,6 @@ class CBFNavigationTask(BaseTask):
             }
         )
         self.action_space = Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32)
-        self.action_transformation_function = self.task_config.action_transformation_function
 
         self.num_envs = self.sim_env.num_envs
 
@@ -164,7 +169,8 @@ class CBFNavigationTask(BaseTask):
     def reset(self):
         self.reset_idx(torch.arange(self.sim_env.num_envs))
         return self.get_return_tuple()
-
+    # TODO: Change the reset_idx function to not spawn the quadotor in positions
+    # where the CBF constraint cannot be satisfied for the given maximal speed
     def reset_idx(self, env_ids):
         target_ratio = torch_rand_float_tensor(self.target_min_ratio, self.target_max_ratio)
         self.target_position[env_ids] = torch_interpolate_ratio(
@@ -275,7 +281,46 @@ class CBFNavigationTask(BaseTask):
             self.timeouts_aggregate = 0
             if wandb.run is not None:
                 wandb.log({"Curriculum Level": self.curriculum_level})
+                wandb.log({"Success Rate": success_rate})
+                wandb.log({"Crash Rate": crash_rate})
+                wandb.log({"Timeout Rate": timeout_rate})
 
+    def action_transformation_function(self,action):
+        position = self.obs_dict["robot_position"]
+        if self.task_config.plot_cbf_constraint or self.task_config.penalize_cbf_constraint:
+            cbf_values = self.collision_cbf.get_composite_cbf_value(
+                position,
+                disp = self.downsampled_lidar_displacements
+            )
+            cbf_derivatives = self.collision_cbf.get_h_derivative(
+                position,
+                action[:,0:3],
+                disp= self.downsampled_lidar_displacements
+            )
+            cbf_constraint = cbf_derivatives + self.task_config.cbf_kappa_gain*cbf_values
+            cbf_constraint = torch.clamp(cbf_constraint, max=0.0)
+            if self.task_config.plot_cbf_constraint and wandb.run is not None:
+                wandb.log({"CBF constraint(unfiltered)": cbf_constraint.mean()})
+                wandb.log({"CBF values": cbf_values.mean()})
+        else:
+            cbf_constraint = torch.zeros_like(action[:,0])
+        if self.task_config.filter_actions:
+            safe_action = torch.zeros_like(action)
+            alpha = self.task_config.cbf_kappa_gain
+            safe_action[:,0:3] = self.collision_cbf.get_safe_input(action[:,0:3],
+                                                            x = position,
+                                                            disp = self.downsampled_lidar_displacements,
+                                                            alpha = alpha)
+            safe_action[:,3] = action[:,3]
+            # Since we don't have input constraints in the CBF, we need to clamp the action
+            # Investigating how we can incorporate input constraints in the CBF is future work
+            correction_mag = torch.linalg.vector_norm(safe_action[:,0:3] - action[:,0:3], dim=1)
+            if wandb.run is not None:
+                wandb.log({"Correction magnitude": correction_mag.mean()})
+        else:
+            safe_action = action
+            correction_mag = torch.zeros_like(action[:,0])
+        return safe_action, correction_mag, cbf_constraint
     def process_image_observation(self):
         image_obs = self.obs_dict["depth_range_pixels"].squeeze(1)
         self.range_latents[:] = self.vae_model.encode(image_obs)
@@ -321,15 +366,18 @@ class CBFNavigationTask(BaseTask):
         # In this case, the episodes that are terminated need to be
         # first reset, and the first obseration of the new episode
         # needs to be returned.
-
-        transformed_action = self.action_transformation_function(actions)
+        transformed_action ,correction_size, cbf_constraint = \
+            self.action_transformation_function(actions)
         logger.debug(f"raw_action: {actions[0]}, transformed action: {transformed_action[0]}")
         self.sim_env.step(actions=transformed_action)
 
         # This step must be done since the reset is done after the reward is calculated.
         # This enables the robot to send back an updated state, and an updated observation to the RL agent after the reset.
         # This is important for the RL agent to get the correct state after the reset.
-        self.rewards[:], self.terminations[:] = self.compute_rewards_and_crashes(self.obs_dict)
+        self.rewards[:], self.terminations[:] = self.compute_rewards_and_crashes(
+            self.obs_dict,
+            correction_size,
+            cbf_constraint)
 
         # logger.info(f"Curricluum Level: {self.curriculum_level}")
 
@@ -357,7 +405,6 @@ class CBFNavigationTask(BaseTask):
         self.infos["successes"] = successes
         self.infos["timeouts"] = timeouts
         self.infos["crashes"] = self.terminations
-
         self.logging_sanity_check(self.infos)
         self.check_and_update_curriculum_level(
             self.infos["successes"], self.infos["crashes"], self.infos["timeouts"]
@@ -401,7 +448,7 @@ class CBFNavigationTask(BaseTask):
         self.task_obs["terminations"] = self.terminations
         self.task_obs["truncations"] = self.truncations
 
-    def compute_rewards_and_crashes(self, obs_dict):
+    def compute_rewards_and_crashes(self, obs_dict, correction_size, cbf_constraint):
         robot_position = obs_dict["robot_position"]
         target_position = self.target_position
         robot_vehicle_orientation = obs_dict["robot_vehicle_orientation"]
@@ -416,36 +463,18 @@ class CBFNavigationTask(BaseTask):
         self.pos_error_vehicle_frame[:] = quat_rotate_inverse(
             robot_vehicle_orientation, (target_position - robot_position)
         )
-        parameter_dict = self.task_config.reward_parameters
-        if self.task_config.plot_cbf_invariance_penalty or self.task_config.include_cbf_invariance_penalty:
-            cbf_values = self.collision_cbf.get_composite_cbf_value(
-                robot_position,
-                disp = self.downsampled_lidar_displacements
-            )
-            cbf_derivatives = self.collision_cbf.get_h_derivative(
-                robot_position,
-                robot_lin_vel_command,
-                disp= self.downsampled_lidar_displacements
-            )
-            cbf_inv_penalty = cbf_derivatives + parameter_dict["cbf_kappa_gain"]*cbf_values
-            cbf_inv_penalty = torch.clamp(cbf_inv_penalty, max=0.0)
-            # TODO: Tune the cbf invariance penalty, to be
-            # a) comparable to the other penalties
-            # b) consider exponential penalty
-            # c) using high enought value to maybe guarantee that the CBF is satisfied
-            if wandb.run is not None and self.task_config.plot_cbf_invariance_penalty:
-                wandb.log({"cbf_invariance_penalty": cbf_inv_penalty.mean()})
-                wandb.log({"cbf_values": cbf_values.mean()})
-            cbf_inv_penalty *= parameter_dict["cbf_invariance_penalty_magnitude"]
-        if self.task_config.include_cbf_invariance_penalty == False:
-            cbf_inv_penalty = torch.zeros_like(self.pos_error_vehicle_frame[:, 0])
+        if not self.task_config.penalize_cbf_corrections:
+            correction_size = torch.zeros_like(correction_size)
+        if not self.task_config.penalize_cbf_constraint:
+            cbf_constraint = torch.zeros_like(cbf_constraint)
         return compute_reward(
             self.pos_error_vehicle_frame,
             self.pos_error_vehicle_frame_prev,
             obs_dict["crashes"],
             obs_dict["robot_actions"],
             obs_dict["robot_prev_actions"],
-            cbf_inv_penalty,
+            correction_size,
+            cbf_constraint,
             self.curriculum_progress_fraction,
             self.task_config.reward_parameters
         )
@@ -474,11 +503,12 @@ def compute_reward(
     crashes,
     action,
     prev_action,
-    cbf_inv_penalty,
+    cbf_correction_size,
+    cbf_constraint,
     curriculum_progress_fraction,
     parameter_dict
 ):
-    # type: (Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, float, Dict[str, Tensor]) -> Tuple[Tensor, Tensor]
+    # type: (Tensor,Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, float, Dict[str, Tensor]) -> Tuple[Tensor, Tensor]
     MULTIPLICATION_FACTOR_REWARD = (1.0 + (2.0) * curriculum_progress_fraction) * 3.0
     dist = torch.norm(pos_error, dim=1)
     prev_dist_to_goal = torch.norm(prev_pos_error, dim=1)
@@ -529,8 +559,14 @@ def compute_reward(
         parameter_dict["yawrate_absolute_action_penalty_exponent"],
         action[:, 3],
     )
+    # TODO: Consider using exponential penalty for the CBF correction size
+    cbf_correction_penalty = parameter_dict["cbf_correction_penalty_magnitude"] \
+        * cbf_correction_size
+    cbf_constraint_penalty = parameter_dict["cbf_invariance_penalty_magnitude"] \
+        * cbf_constraint
     absolute_action_penalty = x_absolute_penalty + z_absolute_penalty + yawrate_absolute_penalty
-    total_action_penalty = action_diff_penalty + absolute_action_penalty + cbf_inv_penalty
+    total_action_penalty = action_diff_penalty + absolute_action_penalty + cbf_correction_penalty\
+        + cbf_constraint_penalty
     # combined reward
     reward = (
         MULTIPLICATION_FACTOR_REWARD
