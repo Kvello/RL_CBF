@@ -41,11 +41,8 @@ class task_config:
     CBF_safe_dist = CBFLidarConfig.min_range + 0.4
     cbf_kappa_gain = 3.0
     plot_cbf_constraint = True
-    include_cbf_invariance_penalty = False
-    max_velocity = 2.0 # m/s max velocity in each direction x,y
-    max_heave_velocity = 0.2 # m/s max velocity in z direction, much lower to 
-    # intencivze planar navigation
-    max_yawrate = torch.pi / 3 # 60 degrees
+    penalize_cbf_corrections = True
+    filter_actions = True
     observation_space_dim = 13 + 4 + vae_config.latent_dims #+1+1# root_state + action_dim _ + downsampled_lidar_dims + CBF_dim + CBF_derivative_dim
     privileged_observation_space_dim = 0
     action_space_dim = 4

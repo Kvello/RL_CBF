@@ -286,16 +286,6 @@ class CBFNavigationTask(BaseTask):
                 wandb.log({"Timeout Rate": timeout_rate})
 
     def action_transformation_function(self,action):
-        clamped_action = torch.clamp(action, -1.0, 1.0)
-        max_vel = self.task_config.max_velocity # [m/s]
-        max_yawrate = self.task_config.max_yawrate# [rad/s]
-        # scale the action to the max speed and max yawrate
-        processed_action = torch.zeros(
-            (action.shape[0], 4), device=self.device, requires_grad=False
-        )
-        processed_action[:,0:3] = clamped_action[:,0:3]*max_vel
-        processed_action[:,3] = clamped_action[:,3]*max_yawrate
-
         position = self.obs_dict["robot_position"]
         if wandb.run is not None and self.task_config.plot_cbf_constraint:
             cbf_values = self.collision_cbf.get_composite_cbf_value(
@@ -304,7 +294,7 @@ class CBFNavigationTask(BaseTask):
             )
             cbf_derivatives = self.collision_cbf.get_h_derivative(
                 position,
-                processed_action[:,0:3],
+                action[:,0:3],
                 disp= self.downsampled_lidar_displacements
             )
             cbf_constraint = cbf_derivatives + self.task_config.cbf_kappa_gain*cbf_values
@@ -312,22 +302,21 @@ class CBFNavigationTask(BaseTask):
             wandb.log({"CBF constraint(unfiltered)": cbf_constraint.mean()})
             wandb.log({"CBF values": cbf_values.mean()})
         if self.task_config.filter_actions:
-            safe_action = torch.zeros_like(processed_action)
+            safe_action = torch.zeros_like(action)
             alpha = self.task_config.cbf_kappa_gain
-            safe_action[:,0:3] = self.collision_cbf.get_safe_input(processed_action[:,0:3],
+            safe_action[:,0:3] = self.collision_cbf.get_safe_input(action[:,0:3],
                                                             x = position,
                                                             disp = self.downsampled_lidar_displacements,
                                                             alpha = alpha)
-            safe_action[:,3] = processed_action[:,3]
+            safe_action[:,3] = action[:,3]
             # Since we don't have input constraints in the CBF, we need to clamp the action
             # Investigating how we can incorporate input constraints in the CBF is future work
-            safe_action[:,0:3] = torch.clamp(safe_action[:,0:3], -max_vel, max_vel)
-            correction_mag = torch.linalg.vector_norm(safe_action[:,0:3] - processed_action[:,0:3], dim=1)
+            correction_mag = torch.linalg.vector_norm(safe_action[:,0:3] - action[:,0:3], dim=1)
             if wandb.run is not None:
                 wandb.log({"Correction magnitude": correction_mag.mean()})
         else:
-            safe_action = processed_action
-            correction_mag = torch.zeros_like(processed_action[:,0])
+            safe_action = action
+            correction_mag = torch.zeros_like(action[:,0])
         return safe_action, correction_mag
     def process_image_observation(self):
         image_obs = self.obs_dict["depth_range_pixels"].squeeze(1)
