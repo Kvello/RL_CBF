@@ -114,7 +114,7 @@ class CBFNavigationTask(BaseTask):
         ) / (self.task_config.curriculum.max_level - self.task_config.curriculum.min_level)
 
         self.terminations = torch.zeros_like(self.obs_dict["crashes"])
-        self.truncations = torch.zeros_like(self.obs_dict["truncations"])
+        self.truncations = self.obs_dict["truncations"]
         self.rewards = torch.zeros(self.truncations.shape[0], device=self.device)
         self.observation_space = Dict(
             {
@@ -383,6 +383,8 @@ class CBFNavigationTask(BaseTask):
         successes = torch.where(
             crashes > 0, torch.zeros_like(successes), successes
         )
+        print("Successes: ", successes)
+        print("Crashes: ", crashes)
         self.terminations[:] = torch.logical_or(crashes, successes)
         self.truncations[:] = torch.where(
             self.sim_env.sim_steps > self.task_config.episode_len_steps,
@@ -396,7 +398,7 @@ class CBFNavigationTask(BaseTask):
         )
         timeouts = torch.where(
             self.terminations > 0, torch.zeros_like(timeouts), timeouts
-        )  # timeouts are not counted if there is a crash
+        )  # timeouts are not counted if there is a crash or success
 
         self.infos["successes"] = successes
         self.infos["timeouts"] = timeouts
