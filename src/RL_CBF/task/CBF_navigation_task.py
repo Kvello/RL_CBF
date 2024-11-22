@@ -113,8 +113,8 @@ class CBFNavigationTask(BaseTask):
             self.curriculum_level - self.task_config.curriculum.min_level
         ) / (self.task_config.curriculum.max_level - self.task_config.curriculum.min_level)
 
-        self.terminations = self.obs_dict["crashes"]
-        self.truncations = self.obs_dict["truncations"]
+        self.terminations = torch.zeros_like(self.obs_dict["crashes"])
+        self.truncations = torch.zeros_like(self.obs_dict["truncations"])
         self.rewards = torch.zeros(self.truncations.shape[0], device=self.device)
         self.observation_space = Dict(
             {
@@ -376,27 +376,21 @@ class CBFNavigationTask(BaseTask):
         # This step must be done since the reset is done after the reward is calculated.
         # This enables the robot to send back an updated state, and an updated observation to the RL agent after the reset.
         # This is important for the RL agent to get the correct state after the reset.
-        self.rewards[:], self.terminations[:] = self.compute_rewards_and_crashes(
-            self.obs_dict,
-            correction_size,
-            cbf_constraint)
-
-        # logger.info(f"Curricluum Level: {self.curriculum_level}")
-
-        if self.task_config.return_state_before_reset == True:
-            return_tuple = self.get_return_tuple()
-
+        crashes = self.obs_dict["crashes"]
+        successes = (
+            torch.norm(self.target_position - self.obs_dict["robot_position"], dim=1) < 1.7
+        )
+        successes = torch.where(
+            crashes > 0, torch.zeros_like(successes), successes
+        )
+        self.terminations[:] = torch.logical_or(crashes, successes)
         self.truncations[:] = torch.where(
             self.sim_env.sim_steps > self.task_config.episode_len_steps,
             torch.ones_like(self.truncations),
             torch.zeros_like(self.truncations),
         )
 
-        # successes are are the sum of the environments which are to be truncated and have reached the target within a distance threshold
-        successes = self.truncations * (
-            torch.norm(self.target_position - self.obs_dict["robot_position"], dim=1) < 1.0
-        )
-        successes = torch.where(self.terminations > 0, torch.zeros_like(successes), successes)
+        assert(torch.logical_and(crashes > 0, successes > 0).sum() == 0)
         timeouts = torch.where(
             self.truncations > 0, torch.logical_not(successes), torch.zeros_like(successes)
         )
@@ -406,14 +400,26 @@ class CBFNavigationTask(BaseTask):
 
         self.infos["successes"] = successes
         self.infos["timeouts"] = timeouts
-        self.infos["crashes"] = self.terminations
+        self.infos["crashes"] = crashes
+        self.rewards[:] = self.compute_rewards(
+            self.obs_dict,
+            successes,
+            crashes,
+            correction_size,
+            cbf_constraint)
+
+        # logger.info(f"Curricluum Level: {self.curriculum_level}")
+
+        if self.task_config.return_state_before_reset == True:
+            return_tuple = self.get_return_tuple()
+
         self.logging_sanity_check(self.infos)
         self.check_and_update_curriculum_level(
             self.infos["successes"], self.infos["crashes"], self.infos["timeouts"]
         )
         # rendering happens at the post-reward calculation step since the newer measurement is required to be
         # sent to the RL algorithm as an observation and it helps if the camera image is updated then
-        reset_envs = self.sim_env.post_reward_calculation_step()
+        reset_envs = self.sim_env.post_reward_calculation_step(successes)
         if len(reset_envs) > 0:
             self.reset_idx(reset_envs)
         self.num_task_steps += 1
@@ -441,27 +447,29 @@ class CBFNavigationTask(BaseTask):
             self.obs_dict["robot_vehicle_orientation"],
             (self.target_position - self.obs_dict["robot_position"]),
         )
-        self.task_obs["observations"][:, 3:7] = self.obs_dict["robot_vehicle_orientation"]
-        self.task_obs["observations"][:, 7:10] = self.obs_dict["robot_body_linvel"]
-        self.task_obs["observations"][:, 10:13] = self.obs_dict["robot_body_angvel"]
-        self.task_obs["observations"][:, 13:17] = self.obs_dict["robot_actions"]
-        self.task_obs["observations"][:, 17:] = self.range_latents
+        self.task_obs["observations"][:, 3] = self.obs_dict["robot_position"][:, 2]
+        self.task_obs["observations"][:, 4:8] = self.obs_dict["robot_vehicle_orientation"]
+        self.task_obs["observations"][:, 8:11] = self.obs_dict["robot_body_linvel"]
+        self.task_obs["observations"][:, 11:14] = self.obs_dict["robot_body_angvel"]
+        self.task_obs["observations"][:, 14:18] = self.obs_dict["robot_actions"]
+        self.task_obs["observations"][:, 18:] = self.range_latents
         self.task_obs["rewards"] = self.rewards
         self.task_obs["terminations"] = self.terminations
         self.task_obs["truncations"] = self.truncations
 
-    def compute_rewards_and_crashes(self, obs_dict, correction_size, cbf_constraint):
+    def compute_rewards(self, 
+                        obs_dict,
+                        successes,
+                        crashes, 
+                        correction_size, 
+                        cbf_constraint):
         robot_position = obs_dict["robot_position"]
         target_position = self.target_position
         robot_vehicle_orientation = obs_dict["robot_vehicle_orientation"]
         robot_orientation = obs_dict["robot_orientation"]
-        robot_lin_vel_command = self.obs_dict["robot_actions"][:,0:3]
         target_orientation = torch.zeros_like(robot_orientation, device=self.device)
         target_orientation[:, 3] = 1.0
         self.pos_error_vehicle_frame_prev[:] = self.pos_error_vehicle_frame
-        robot_lin_vel_command_robot_frame = quat_rotate_inverse(
-            robot_vehicle_orientation, robot_lin_vel_command
-        )
         self.pos_error_vehicle_frame[:] = quat_rotate_inverse(
             robot_vehicle_orientation, (target_position - robot_position)
         )
@@ -472,7 +480,8 @@ class CBFNavigationTask(BaseTask):
         return compute_reward(
             self.pos_error_vehicle_frame,
             self.pos_error_vehicle_frame_prev,
-            obs_dict["crashes"],
+            crashes,
+            successes,
             obs_dict["robot_actions"],
             obs_dict["robot_prev_actions"],
             correction_size,
@@ -503,6 +512,7 @@ def compute_reward(
     pos_error,
     prev_pos_error,
     crashes,
+    successes,
     action,
     prev_action,
     cbf_correction_size,
@@ -510,29 +520,23 @@ def compute_reward(
     curriculum_progress_fraction,
     parameter_dict
 ):
-    # type: (Tensor,Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, float, Dict[str, Tensor]) -> Tuple[Tensor, Tensor]
-    MULTIPLICATION_FACTOR_REWARD = (1.0 + (2.0) * curriculum_progress_fraction) * 3.0
+    # type: (Tensor,Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, float, Dict[str, Tensor]) -> Tensor
+    curriculum_reward_multiplier = (1.0 + curriculum_progress_fraction*1.0)
     dist = torch.norm(pos_error, dim=1)
     prev_dist_to_goal = torch.norm(prev_pos_error, dim=1)
-    pos_reward = exponential_reward_function(
-        parameter_dict["pos_reward_magnitude"],
-        parameter_dict["pos_reward_exponent"],
-        dist,
-    )
-    very_close_to_goal_reward = exponential_reward_function(
-        parameter_dict["very_close_to_goal_reward_magnitude"],
-        parameter_dict["very_close_to_goal_reward_exponent"],
-        dist,
-    )
     getting_closer_reward = parameter_dict["getting_closer_reward_multiplier"] * (
-        prev_dist_to_goal - dist
+        prev_dist_to_goal*parameter_dict["gamma"] - dist
     )
-    distance_from_goal_reward = (20.0 - dist) / 20.0
     action_diff = action - prev_action
     x_diff_penalty = exponential_penalty_function(
         parameter_dict["x_action_diff_penalty_magnitude"],
         parameter_dict["x_action_diff_penalty_exponent"],
         action_diff[:, 0],
+    )
+    y_diff_penalty = exponential_penalty_function(
+        parameter_dict["y_action_diff_penalty_magnitude"],
+        parameter_dict["y_action_diff_penalty_exponent"],
+        action_diff[:, 1],
     )
     z_diff_penalty = exponential_penalty_function(
         parameter_dict["z_action_diff_penalty_magnitude"],
@@ -544,46 +548,42 @@ def compute_reward(
         parameter_dict["yawrate_action_diff_penalty_exponent"],
         action_diff[:, 3],
     )
-    action_diff_penalty = x_diff_penalty + z_diff_penalty + yawrate_diff_penalty
+    action_diff_penalty = x_diff_penalty + z_diff_penalty + y_diff_penalty + yawrate_diff_penalty
     # absolute action penalty
-    x_absolute_penalty = curriculum_progress_fraction * exponential_penalty_function(
+    x_absolute_penalty = exponential_penalty_function(
         parameter_dict["x_absolute_action_penalty_magnitude"],
         parameter_dict["x_absolute_action_penalty_exponent"],
         action[:, 0],
     )
-    z_absolute_penalty = curriculum_progress_fraction * exponential_penalty_function(
+    y_absolute_penalty = exponential_penalty_function(
+        parameter_dict["y_absolute_action_penalty_magnitude"],
+        parameter_dict["y_absolute_action_penalty_exponent"],
+        action[:, 1],
+    )
+    z_absolute_penalty = exponential_penalty_function(
         parameter_dict["z_absolute_action_penalty_magnitude"],
         parameter_dict["z_absolute_action_penalty_exponent"],
         action[:, 2],
     )
-    yawrate_absolute_penalty = curriculum_progress_fraction * exponential_penalty_function(
+    yawrate_absolute_penalty = exponential_penalty_function(
         parameter_dict["yawrate_absolute_action_penalty_magnitude"],
         parameter_dict["yawrate_absolute_action_penalty_exponent"],
         action[:, 3],
     )
+    absolute_action_penalty = x_absolute_penalty +y_absolute_penalty +\
+        z_absolute_penalty + yawrate_absolute_penalty
     # TODO: Consider using exponential penalty for the CBF correction size
+
     cbf_correction_penalty = parameter_dict["cbf_correction_penalty_magnitude"] \
         * cbf_correction_size
     cbf_constraint_penalty = parameter_dict["cbf_invariance_penalty_magnitude"] \
         * cbf_constraint
-    absolute_action_penalty = x_absolute_penalty + z_absolute_penalty + yawrate_absolute_penalty
     total_action_penalty = action_diff_penalty + absolute_action_penalty + cbf_correction_penalty\
         + cbf_constraint_penalty
     # combined reward
-    reward = (
-        MULTIPLICATION_FACTOR_REWARD
-        * (
-            pos_reward
-            + very_close_to_goal_reward
-            + getting_closer_reward
-            + distance_from_goal_reward
-        )
-        + total_action_penalty
-    )
-
-    reward[:] = torch.where(
-        crashes > 0,
-        parameter_dict["collision_penalty"] * torch.ones_like(reward),
-        reward,
-    )
-    return reward, crashes
+    collision_penalty = crashes * parameter_dict["collision_penalty"]
+    success_reward = successes * parameter_dict["success_reward"]
+    reward =  getting_closer_reward + total_action_penalty + \
+        success_reward + collision_penalty
+    reward = reward * curriculum_reward_multiplier
+    return reward

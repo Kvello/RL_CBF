@@ -38,15 +38,15 @@ class task_config:
         "height": 16,
         "width": 64,
     }
-    CBF_safe_dist = CBFLidarConfig.min_range + 0.4
-    cbf_kappa_gain = 3.0
-    plot_cbf_constraint = True
+    CBF_safe_dist = CBFLidarConfig.min_range + 0.3
+    cbf_kappa_gain = 2.0
+    plot_cbf_constraint = False
     penalize_cbf_constraint = False
-    penalize_cbf_corrections = True
-    filter_actions = True
+    penalize_cbf_corrections = False
+    filter_actions = False
     max_velocity = 2.0 # m/s max velocity in x,y,z directions
     max_yawrate = 20.0*torch.pi/180.0 # rad/s max yawrate
-    observation_space_dim = 13 + 4 + vae_config.latent_dims #+1+1# root_state + action_dim _ + downsampled_lidar_dims + CBF_dim + CBF_derivative_dim
+    observation_space_dim = 13 + 4 + vae_config.latent_dims + 1 # root state + action_dim _ + downsampled_lidar_dims + z-position
     privileged_observation_space_dim = 0
     action_space_dim = 4
     episode_len_steps = 100  # real physics time for simulation is this value multiplied by sim.dt
@@ -59,26 +59,30 @@ class task_config:
     target_min_ratio = [0.90, 0.1, 0.1]  # target ratio w.r.t environment bounds in x,y,z
     target_max_ratio = [0.94, 0.90, 0.90]  # target ratio w.r.t environment bounds in x,y,z
     reward_parameters = {
-        "pos_reward_magnitude": 5.0,
-        "pos_reward_exponent": 1.0 / 3.5,
-        "very_close_to_goal_reward_magnitude": 5.0,
-        "very_close_to_goal_reward_exponent": 2.0,
-        "getting_closer_reward_multiplier": 10.0,
-        "x_action_diff_penalty_magnitude": 0.8,
+        "success_reward": 100.0,
+        "getting_closer_reward_multiplier": 5.0,
+        "gamma": 0.995, # discount factor. Note that this is defined in the .yaml file,
+        # and needs to be set to the same value here
+        # It is used for reward shaping following the shaping theorem
+        "x_action_diff_penalty_magnitude": 0.1,
         "x_action_diff_penalty_exponent": 3.333,
-        "z_action_diff_penalty_magnitude": 0.8,
+        "y_action_diff_penalty_magnitude": 0.1,
+        "y_action_diff_penalty_exponent": 3.333,
+        "z_action_diff_penalty_magnitude": 0.1,
         "z_action_diff_penalty_exponent": 5.0,
-        "yawrate_action_diff_penalty_magnitude": 0.8,
+        "yawrate_action_diff_penalty_magnitude": 0.001,
         "yawrate_action_diff_penalty_exponent": 3.33,
-        "x_absolute_action_penalty_magnitude": 1.6,
+        "x_absolute_action_penalty_magnitude": 0.2,
         "x_absolute_action_penalty_exponent": 0.3,
-        "z_absolute_action_penalty_magnitude": 1.5,
-        "z_absolute_action_penalty_exponent": 1.0,
-        "yawrate_absolute_action_penalty_magnitude": 1.5,
+        "y_absolute_action_penalty_magnitude": 0.2,
+        "y_absolute_action_penalty_exponent": 0.3,
+        "z_absolute_action_penalty_magnitude": 0.2,
+        "z_absolute_action_penalty_exponent": 0.3,
+        "yawrate_absolute_action_penalty_magnitude": 0.2,
         "yawrate_absolute_action_penalty_exponent": 2.0,
-        "collision_penalty": -50.0,
-        "cbf_correction_penalty_magnitude" : -50.0,
-        "cbf_invariance_penalty_magnitude" : 50.0,
+        "collision_penalty": -100.0,
+        "cbf_correction_penalty_magnitude" : -5.0,
+        "cbf_invariance_penalty_magnitude" : 5.0,
     }
 
     class curriculum:
@@ -87,5 +91,5 @@ class task_config:
         check_after_log_instances = 2048
         increase_step = 2
         decrease_step = 1
-        success_rate_for_increase = 0.7
+        success_rate_for_increase = 0.8
         success_rate_for_decrease = 0.6
