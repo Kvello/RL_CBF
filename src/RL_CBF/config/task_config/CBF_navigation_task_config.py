@@ -38,14 +38,16 @@ class task_config:
         "height": 16,
         "width": 64,
     }
-    CBF_safe_dist = CBFLidarConfig.min_range + 0.3
-    cbf_kappa_gain = 1.0
+    CBF_safe_dist = CBFLidarConfig.min_range + 0.5
+    cbf_kappa_gain = 0.5
     plot_cbf_constraint = True
     penalize_cbf_constraint = False
-    penalize_cbf_corrections = True
+    penalize_cbf_corrections = False
     filter_actions = True
-    max_velocity = 2.0 # m/s max velocity in x,y,z directions
+    max_speed = 2.0 # m/s
     max_yawrate = 20.0*torch.pi/180.0 # rad/s max yawrate
+    max_angle_of_attack = CBFLidarConfig.vertical_fov_deg_max*torch.pi/180.0 # rad max angle of attack
+    # Luckily our LiDAR has symmetric vertical field of view, so we don't need a min value
     observation_space_dim = 13 + 4 + vae_config.latent_dims + 1 # root state + action_dim _ + downsampled_lidar_dims + z-position
     privileged_observation_space_dim = 0
     action_space_dim = 4
