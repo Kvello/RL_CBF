@@ -39,17 +39,17 @@ class task_config:
         "width": 64,
     }
     CBF_safe_dist = CBFLidarConfig.min_range + 0.3
-    cbf_kappa_gain = 2.0
-    plot_cbf_constraint = False
+    cbf_kappa_gain = 1.0
+    plot_cbf_constraint = True
     penalize_cbf_constraint = False
-    penalize_cbf_corrections = False
-    filter_actions = False
+    penalize_cbf_corrections = True
+    filter_actions = True
     max_velocity = 2.0 # m/s max velocity in x,y,z directions
     max_yawrate = 20.0*torch.pi/180.0 # rad/s max yawrate
     observation_space_dim = 13 + 4 + vae_config.latent_dims + 1 # root state + action_dim _ + downsampled_lidar_dims + z-position
     privileged_observation_space_dim = 0
     action_space_dim = 4
-    episode_len_steps = 100  # real physics time for simulation is this value multiplied by sim.dt
+    episode_len_steps = 150  # real physics time for simulation is this value multiplied by sim.dt
 
     return_state_before_reset = (
         False  # False as usually state is returned for next episode after reset
@@ -70,7 +70,7 @@ class task_config:
         "y_action_diff_penalty_exponent": 3.333,
         "z_action_diff_penalty_magnitude": 0.1,
         "z_action_diff_penalty_exponent": 5.0,
-        "yawrate_action_diff_penalty_magnitude": 0.001,
+        "yawrate_action_diff_penalty_magnitude": 0.1,
         "yawrate_action_diff_penalty_exponent": 3.33,
         "x_absolute_action_penalty_magnitude": 0.2,
         "x_absolute_action_penalty_exponent": 0.3,
@@ -81,8 +81,8 @@ class task_config:
         "yawrate_absolute_action_penalty_magnitude": 0.2,
         "yawrate_absolute_action_penalty_exponent": 2.0,
         "collision_penalty": -100.0,
-        "cbf_correction_penalty_magnitude" : -5.0,
-        "cbf_invariance_penalty_magnitude" : 5.0,
+        "cbf_correction_penalty_magnitude" : -20.0,
+        "cbf_invariance_penalty_magnitude" : 20.0,
     }
 
     class curriculum:
