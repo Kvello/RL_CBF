@@ -114,6 +114,7 @@ class CBFNavigationTask(BaseTask):
         ) / (self.task_config.curriculum.max_level - self.task_config.curriculum.min_level)
 
         self.terminations = torch.zeros_like(self.obs_dict["crashes"])
+        self.obs_dict["crashes"] = torch.zeros_like(self.obs_dict["crashes"]) # Intialize crashes to false
         self.truncations = self.obs_dict["truncations"]
         self.rewards = torch.zeros(self.truncations.shape[0], device=self.device)
         self.observation_space = Dict(
