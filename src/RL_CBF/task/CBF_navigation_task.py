@@ -378,13 +378,11 @@ class CBFNavigationTask(BaseTask):
         # This is important for the RL agent to get the correct state after the reset.
         crashes = self.obs_dict["crashes"]
         successes = (
-            torch.norm(self.target_position - self.obs_dict["robot_position"], dim=1) < 1.7
+            torch.norm(self.target_position - self.obs_dict["robot_position"], dim=1) < 1.0
         )
         successes = torch.where(
             crashes > 0, torch.zeros_like(successes), successes
         )
-        print("Successes: ", successes)
-        print("Crashes: ", crashes)
         self.terminations[:] = torch.logical_or(crashes, successes)
         self.truncations[:] = torch.where(
             self.sim_env.sim_steps > self.task_config.episode_len_steps,
