@@ -287,9 +287,20 @@ class CBFNavigationTask(BaseTask):
 
     def action_transformation_function(self,action):
         position = self.obs_dict["robot_position"]
+        # Actions are polar decomposition of the velocity in the body frame,
+        # and the yaw rate. We need to restrict the bearing angle, so that
+        # the direction of the velocity is in a direction observable by the LiDAR.
+        # This makes the CBF constraint more meaningful.
         # We have defined the action space to be between -1 and 1 for all the actions
-        action[0,:3] = action[0,:3]*self.task_config.max_velocity
-        action[0,3] = action[0,3]*self.task_config.max_yawrate
+        transformed_action = torch.zeros_like(action)
+        theta = action[:, 0]*torch.pi # crab angle
+        phi = action[:, 1]*self.task_config.max_angle_of_attack # Angle of attack
+        speed = (action[:, 2] + 1.0)/2.0*self.task_config.max_speed # m/s. Don't want negative speeds
+        transformed_action[:,0] = torch.cos(theta)*torch.cos(phi)*speed
+        transformed_action[:,1] = torch.sin(theta)*torch.cos(phi)*speed
+        transformed_action[:,2] = torch.sin(phi)*speed
+        transformed_action[:,3] = action[:, 3]*self.task_config.max_yawrate # rad/s
+
         if self.task_config.plot_cbf_constraint or self.task_config.penalize_cbf_constraint:
             cbf_values = self.collision_cbf.get_composite_cbf_value(
                 position,
@@ -297,7 +308,7 @@ class CBFNavigationTask(BaseTask):
             )
             cbf_derivatives = self.collision_cbf.get_h_derivative(
                 position,
-                action[:,0:3],
+                transformed_action[:,0:3],
                 disp= self.downsampled_lidar_displacements
             )
             cbf_constraint = cbf_derivatives + self.task_config.cbf_kappa_gain*cbf_values
@@ -308,15 +319,15 @@ class CBFNavigationTask(BaseTask):
         else:
             cbf_constraint = torch.zeros_like(action[:,0])
         if self.task_config.filter_actions:
-            safe_action = torch.zeros_like(action)
+            safe_action = torch.zeros_like(transformed_action)
             alpha = self.task_config.cbf_kappa_gain
-            safe_action[:,0:3] = self.collision_cbf.get_safe_input(action[:,0:3],
+            safe_action[:,0:3] = self.collision_cbf.get_safe_input(transformed_action[:,0:3],
                                                             x = position,
                                                             disp = self.downsampled_lidar_displacements,
                                                             alpha = alpha)
-            safe_action[:,3] = action[:,3]
+            safe_action[:,3] = transformed_action[:,3]
             # Investigating how we can incorporate input constraints in the CBF is future work
-            correction_mag = torch.linalg.vector_norm(safe_action[:,0:3] - action[:,0:3], dim=1)
+            correction_mag = torch.linalg.vector_norm(safe_action[:,0:3] - transformed_action[:,0:3], dim=1)
             if wandb.run is not None:
                 wandb.log({"Correction magnitude": correction_mag.mean()})
         else:
