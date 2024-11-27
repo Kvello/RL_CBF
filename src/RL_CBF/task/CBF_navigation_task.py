@@ -468,7 +468,8 @@ class CBFNavigationTask(BaseTask):
         self.task_obs["observations"][:, 7:10] = self.obs_dict["robot_body_linvel"]
         self.task_obs["observations"][:, 10:13] = self.obs_dict["robot_body_angvel"]
         self.task_obs["observations"][:, 13:17] = self.obs_dict["robot_actions"]
-        self.task_obs["observations"][:, 17:] = self.range_latents
+        self.task_obs["observations"][:, 17] = self.obs_dict["robot_position"][:,2]
+        self.task_obs["observations"][:, 18:] = self.range_latents
         self.task_obs["rewards"] = self.rewards
         self.task_obs["terminations"] = self.terminations
         self.task_obs["truncations"] = self.truncations
