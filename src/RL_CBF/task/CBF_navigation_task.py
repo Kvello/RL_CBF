@@ -114,7 +114,6 @@ class CBFNavigationTask(BaseTask):
         ) / (self.task_config.curriculum.max_level - self.task_config.curriculum.min_level)
 
         self.terminations = torch.zeros_like(self.obs_dict["crashes"])
-        self.obs_dict["crashes"] = torch.zeros_like(self.obs_dict["crashes"]) # Intialize crashes to false
         self.truncations = self.obs_dict["truncations"]
         self.rewards = torch.zeros(self.truncations.shape[0], device=self.device)
         self.observation_space = Dict(
@@ -293,6 +292,7 @@ class CBFNavigationTask(BaseTask):
         # the direction of the velocity is in a direction observable by the LiDAR.
         # This makes the CBF constraint more meaningful.
         # We have defined the action space to be between -1 and 1 for all the actions
+        action = torch.clamp(action, min=-1.0, max=1.0)
         transformed_action = torch.zeros_like(action)
         theta = action[:, 0]*torch.pi # crab angle
         phi = action[:, 1]*self.task_config.max_angle_of_attack # Angle of attack
@@ -314,6 +314,11 @@ class CBFNavigationTask(BaseTask):
             )
             cbf_constraint = cbf_derivatives + self.task_config.cbf_kappa_gain*cbf_values
             cbf_constraint = torch.clamp(cbf_constraint, max=0.0)
+            if cbf_constraint.isnan().any():
+                print("CBF constraint is NaN")
+                cbf_constraint = torch.zeros_like(action[:,0])
+            if cbf_constraint.isinf().any():
+                print("CBF constraint is inf")
             if self.task_config.plot_cbf_constraint and wandb.run is not None:
                 wandb.log({"CBF constraint(unfiltered)": cbf_constraint.mean()})
                 wandb.log({"CBF values": cbf_values.mean()})
@@ -459,12 +464,11 @@ class CBFNavigationTask(BaseTask):
             self.obs_dict["robot_vehicle_orientation"],
             (self.target_position - self.obs_dict["robot_position"]),
         )
-        self.task_obs["observations"][:, 3] = self.obs_dict["robot_position"][:, 2]
-        self.task_obs["observations"][:, 4:8] = self.obs_dict["robot_vehicle_orientation"]
-        self.task_obs["observations"][:, 8:11] = self.obs_dict["robot_body_linvel"]
-        self.task_obs["observations"][:, 11:14] = self.obs_dict["robot_body_angvel"]
-        self.task_obs["observations"][:, 14:18] = self.obs_dict["robot_actions"]
-        self.task_obs["observations"][:, 18:] = self.range_latents
+        self.task_obs["observations"][:, 3:7] = self.obs_dict["robot_vehicle_orientation"]
+        self.task_obs["observations"][:, 7:10] = self.obs_dict["robot_body_linvel"]
+        self.task_obs["observations"][:, 10:13] = self.obs_dict["robot_body_angvel"]
+        self.task_obs["observations"][:, 13:17] = self.obs_dict["robot_actions"]
+        self.task_obs["observations"][:, 17:] = self.range_latents
         self.task_obs["rewards"] = self.rewards
         self.task_obs["terminations"] = self.terminations
         self.task_obs["truncations"] = self.truncations
@@ -598,4 +602,8 @@ def compute_reward(
     reward =  getting_closer_reward + total_action_penalty + \
         success_reward + collision_penalty
     reward = reward * curriculum_reward_multiplier
+    if reward.isnan().any():
+        print("Reward is NaN")
+    if reward.isinf().any():
+        print("Reward is inf")
     return reward
