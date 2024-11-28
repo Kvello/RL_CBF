@@ -41,7 +41,7 @@ class task_config:
     CBF_safe_dist = CBFLidarConfig.min_range + 0.4
     cbf_kappa_gain = 1.5
     plot_cbf_constraint = True
-    penalize_cbf_constraint = False
+    penalize_cbf_constraint = True
     penalize_cbf_corrections = False
     filter_actions = False
     max_speed = 2.0 # m/s
