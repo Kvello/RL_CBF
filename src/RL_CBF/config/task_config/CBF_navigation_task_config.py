@@ -48,6 +48,10 @@ class task_config:
     max_yawrate = 20.0*torch.pi/180.0 # rad/s max yawrate
     max_angle_of_attack = CBFLidarConfig.vertical_fov_deg_max*torch.pi/180.0 # rad max angle of attack
     # Luckily our LiDAR has symmetric vertical field of view, so we don't need a min value
+
+    # These values define the goal state
+    goal_speed_limit = 0.1 # m/s
+    goal_distance_limit = 1.0 # m
     observation_space_dim = 13 + 4 + vae_config.latent_dims # root state + action_dim _ + lidar_vae_latent_dim
     privileged_observation_space_dim = 0
     action_space_dim = 4
