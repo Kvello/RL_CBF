@@ -394,9 +394,11 @@ class CBFNavigationTask(BaseTask):
         # This enables the robot to send back an updated state, and an updated observation to the RL agent after the reset.
         # This is important for the RL agent to get the correct state after the reset.
         crashes = self.obs_dict["crashes"]
-        successes = (
-            torch.norm(self.target_position - self.obs_dict["robot_position"], dim=1) < 1.0
-        )
+        reached = torch.norm(self.target_position - self.obs_dict["robot_position"], dim=1) \
+                < self.task_config.goal_distance_limit
+        stopped = torch.norm(self.obs_dict["robot_body_linvel"], dim=1) \
+            < self.task_config.goal_speed_limit
+        successes = torch.logical_and(reached, stopped)
         successes = torch.where(
             crashes > 0, torch.zeros_like(successes), successes
         )
