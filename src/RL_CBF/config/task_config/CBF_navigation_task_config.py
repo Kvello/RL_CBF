@@ -40,8 +40,8 @@ class task_config:
     }
     CBF_safe_dist = CBFLidarConfig.min_range + 0.4
     cbf_kappa_gain = 1.5
-    plot_cbf_constraint = False
-    penalize_cbf_constraint = False
+    plot_cbf_constraint = True
+    penalize_cbf_constraint = True
     penalize_cbf_corrections = False
     filter_actions = False
     max_speed = 2.0 # m/s
@@ -65,8 +65,8 @@ class task_config:
     target_min_ratio = [0.90, 0.1, 0.1]  # target ratio w.r.t environment bounds in x,y,z
     target_max_ratio = [0.94, 0.90, 0.90]  # target ratio w.r.t environment bounds in x,y,z
     reward_parameters = {
-        "success_reward": 100.0,
-        "getting_closer_reward_multiplier": 5.0,
+        "success_reward": 20.0,
+        "getting_closer_reward_multiplier": 3.0,
         "gamma": 0.995, # discount factor. Note that this is defined in the .yaml file,
         # and needs to be set to the same value here
         # It is used for reward shaping following the shaping theorem
@@ -87,7 +87,7 @@ class task_config:
         "yawrate_absolute_action_penalty_magnitude": 0.2,
         "yawrate_absolute_action_penalty_exponent": 2.0,
         "collision_penalty": -100.0,
-        "cbf_correction_penalty_magnitude" : -5.0,
+        "cbf_correction_penalty_magnitude" : -10.0,
         "cbf_invariance_penalty_magnitude" : 5.0,
     }
 
