@@ -40,8 +40,8 @@ class task_config:
     }
     CBF_safe_dist = CBFLidarConfig.min_range + 0.4
     cbf_kappa_gain = 1.5
-    plot_cbf_constraint = True
-    penalize_cbf_constraint = True
+    plot_cbf_constraint = False
+    penalize_cbf_constraint = False
     penalize_cbf_corrections = False
     filter_actions = False
     max_speed = 2.0 # m/s
@@ -66,7 +66,7 @@ class task_config:
     target_max_ratio = [0.94, 0.90, 0.90]  # target ratio w.r.t environment bounds in x,y,z
     reward_parameters = {
         "success_reward": 20.0,
-        "getting_closer_reward_multiplier": 3.0,
+        "getting_closer_reward_multiplier": 2.0,
         "gamma": 0.995, # discount factor. Note that this is defined in the .yaml file,
         # and needs to be set to the same value here
         # It is used for reward shaping following the shaping theorem
@@ -87,7 +87,7 @@ class task_config:
         "yawrate_absolute_action_penalty_magnitude": 0.2,
         "yawrate_absolute_action_penalty_exponent": 2.0,
         "collision_penalty": -100.0,
-        "cbf_correction_penalty_magnitude" : -10.0,
+        "cbf_correction_penalty_magnitude" : -5.0,
         "cbf_invariance_penalty_magnitude" : 5.0,
     }
 
@@ -99,3 +99,15 @@ class task_config:
         decrease_step = 0
         success_rate_for_increase = 0.8
         success_rate_for_decrease = 0.6
+"""
+Experiments to consider:
+1. Increase the invariance penalty substantially, to see if the agent learns a safer policy
+(Hypothesis: No, a large increase in the invariance penalty will make the problem harder to learn
+Hypothesis was correct
+
+and the agent will only learn a marginally safer policy)
+2. Consider curriculum learning. Figure out how to start from level 0, and gradually increase
+3. See what happens if the horizon length is decreased. Do we still learn a safe policy?
+4. Need a solid benchmrk. One of the previous benchmarks converged much faster than the others,
+need to figure out why. My hypothesis is that the getting_closer_reward_multiplier was too high.
+"""
