@@ -65,30 +65,34 @@ class task_config:
     target_min_ratio = [0.90, 0.1, 0.1]  # target ratio w.r.t environment bounds in x,y,z
     target_max_ratio = [0.94, 0.90, 0.90]  # target ratio w.r.t environment bounds in x,y,z
     reward_parameters = {
-        "success_reward": 20.0,
-        "getting_closer_reward_multiplier": 2.0,
-        "gamma": 0.995, # discount factor. Note that this is defined in the .yaml file,
+        "success_reward": 1000.0,
+        "potential_function_mag": 100.0,
+        "potential_function_shape": 0.5,
+        "linear_potential_function_mag": 20.0,
+        "stop_potential_function_mag": 100.0,
+        "gamma": 0.99, # discount factor. Note that this is defined in the .yaml file,
         # and needs to be set to the same value here
         # It is used for reward shaping following the shaping theorem
-        "x_action_diff_penalty_magnitude": 0.1,
+        "not_finished_penalty": -0.1, # To incentivize the agent to finish the episode
+        "x_action_diff_penalty_magnitude": 0.8,
         "x_action_diff_penalty_exponent": 3.333,
-        "y_action_diff_penalty_magnitude": 0.1,
+        "y_action_diff_penalty_magnitude": 0.8,
         "y_action_diff_penalty_exponent": 3.333,
-        "z_action_diff_penalty_magnitude": 0.1,
+        "z_action_diff_penalty_magnitude": 0.8,
         "z_action_diff_penalty_exponent": 5.0,
-        "yawrate_action_diff_penalty_magnitude": 0.1,
+        "yawrate_action_diff_penalty_magnitude": 0.8,
         "yawrate_action_diff_penalty_exponent": 3.33,
-        "x_absolute_action_penalty_magnitude": 0.2,
+        "x_absolute_action_penalty_magnitude": 1.6,
         "x_absolute_action_penalty_exponent": 0.3,
-        "y_absolute_action_penalty_magnitude": 0.2,
+        "y_absolute_action_penalty_magnitude": 1.6,
         "y_absolute_action_penalty_exponent": 0.3,
-        "z_absolute_action_penalty_magnitude": 0.2,
+        "z_absolute_action_penalty_magnitude": 1.6,
         "z_absolute_action_penalty_exponent": 0.3,
-        "yawrate_absolute_action_penalty_magnitude": 0.2,
+        "yawrate_absolute_action_penalty_magnitude": 1.6,
         "yawrate_absolute_action_penalty_exponent": 2.0,
         "collision_penalty": -100.0,
         "cbf_correction_penalty_magnitude" : -5.0,
-        "cbf_invariance_penalty_magnitude" : 5.0,
+        "cbf_invariance_penalty_magnitude" : 20.0,
     }
 
     class curriculum:
@@ -99,15 +103,24 @@ class task_config:
         decrease_step = 0
         success_rate_for_increase = 0.8
         success_rate_for_decrease = 0.6
+
 """
 Experiments to consider:
 1. Increase the invariance penalty substantially, to see if the agent learns a safer policy
 (Hypothesis: No, a large increase in the invariance penalty will make the problem harder to learn
-Hypothesis was correct
-
 and the agent will only learn a marginally safer policy)
+Hypothesis was correct
 2. Consider curriculum learning. Figure out how to start from level 0, and gradually increase
 3. See what happens if the horizon length is decreased. Do we still learn a safe policy?
 4. Need a solid benchmrk. One of the previous benchmarks converged much faster than the others,
 need to figure out why. My hypothesis is that the getting_closer_reward_multiplier was too high.
+5. Setting gamma lower gives better performance in terms of successrate, but the rewards are low(negative)
+The learning is stable however. The problem seems to be that with a low gamma the "getting closer" reward
+is mostly negaative, even though the agent is getting closer to the goal. This is because the agent is
+not moving fast enough to make the reward positive. I should look into a way to make the reward positive
+with low gamma even though the agent is moving slowly. Some sort of function on the potential function
+is needed, my intuition is telling me that an exponential function might be the way to go.
+6. If gamma is set to 1, it works decently, but the timeout rate is too high. The learning
+is quite sensitive to the horizon lenght(probably in combination with lr etc.) however. Try including a
+fixed step penalty for intcentivizing the agent to finish the episode.
 """

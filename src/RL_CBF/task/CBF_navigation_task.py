@@ -70,9 +70,12 @@ class CBFNavigationTask(BaseTask):
         self.success_aggregate = 0
         self.crashes_aggregate = 0
         self.timeouts_aggregate = 0
+        
         self.pos_error_vehicle_frame_prev = torch.zeros_like(self.target_position)
-
         self.pos_error_vehicle_frame = torch.zeros_like(self.target_position)
+        self.prev_speed = torch.zeros(self.sim_env.num_envs, device=self.device)
+        self.speed = torch.zeros(self.sim_env.num_envs, device=self.device)
+
 
         if self.task_config.vae_config.use_lidar_vae:
             self.vae_model = VAELidar(size_latent=self.task_config.vae_config.latent_dims,
@@ -487,6 +490,8 @@ class CBFNavigationTask(BaseTask):
         robot_orientation = obs_dict["robot_orientation"]
         target_orientation = torch.zeros_like(robot_orientation, device=self.device)
         target_orientation[:, 3] = 1.0
+        self.prev_speed = self.speed
+        self.speed = torch.linalg.vector_norm(obs_dict["robot_body_linvel"], dim=1)
         self.pos_error_vehicle_frame_prev[:] = self.pos_error_vehicle_frame
         self.pos_error_vehicle_frame[:] = quat_rotate_inverse(
             robot_vehicle_orientation, (target_position - robot_position)
@@ -495,9 +500,13 @@ class CBFNavigationTask(BaseTask):
             correction_size = torch.zeros_like(correction_size)
         if not self.task_config.penalize_cbf_constraint:
             cbf_constraint = torch.zeros_like(cbf_constraint)
+        param_dict = self.task_config.reward_parameters
+        param_dict["goal_distance_limit"] = torch.tensor(self.task_config.goal_distance_limit)
         return compute_reward(
             self.pos_error_vehicle_frame,
             self.pos_error_vehicle_frame_prev,
+            self.speed,
+            self.prev_speed,
             crashes,
             successes,
             obs_dict["robot_actions"],
@@ -505,7 +514,7 @@ class CBFNavigationTask(BaseTask):
             correction_size,
             cbf_constraint,
             self.curriculum_progress_fraction,
-            self.task_config.reward_parameters
+            param_dict
         )
 
 
@@ -523,12 +532,25 @@ def exponential_penalty_function(
 ) -> torch.Tensor:
     """Exponential reward function"""
     return magnitude * (torch.exp(-(value * value) * exponent) - 1.0)
-
+@torch.jit.script
+def exponential_potential_function(
+    magnitude: float, exponent: float, value: torch.Tensor
+) -> torch.Tensor:
+    """Exponential potential function"""
+    return magnitude * (torch.exp(-torch.abs(value) * exponent))
+@torch.jit.script
+def logaritmic_potential_function(
+    magnitude: float, value: torch.Tensor
+) -> torch.Tensor:
+    """Logarithmic potential function"""
+    return magnitude - torch.log(torch.abs(value) + 1.0)
 
 @torch.jit.script
 def compute_reward(
     pos_error,
     prev_pos_error,
+    speed,
+    prev_speed,
     crashes,
     successes,
     action,
@@ -538,13 +560,43 @@ def compute_reward(
     curriculum_progress_fraction,
     parameter_dict
 ):
-    # type: (Tensor,Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, float, Dict[str, Tensor]) -> Tensor
+    # type: (Tensor,Tensor, Tensor,Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, float, Dict[str, Tensor]) -> Tensor
     curriculum_reward_multiplier = (1.0 + curriculum_progress_fraction*1.0)
     dist = torch.norm(pos_error, dim=1)
     prev_dist_to_goal = torch.norm(prev_pos_error, dim=1)
-    getting_closer_reward = parameter_dict["getting_closer_reward_multiplier"] * (
-        prev_dist_to_goal*parameter_dict["gamma"] - dist
+    prev_exponential_potential = exponential_potential_function(
+        parameter_dict["potential_function_mag"],
+        parameter_dict["potential_function_shape"],
+        prev_dist_to_goal,
     )
+    exponential_potential = exponential_potential_function(
+        parameter_dict["potential_function_mag"],
+        parameter_dict["potential_function_shape"],
+        dist
+    )
+    prev_linear_potential = -prev_dist_to_goal*parameter_dict["linear_potential_function_mag"]
+    linear_potential = -dist*parameter_dict["linear_potential_function_mag"]
+    prev_potential = prev_exponential_potential + prev_linear_potential
+    potential = exponential_potential + linear_potential
+    getting_closer_reward = potential*parameter_dict["gamma"] - prev_potential
+
+    # A potential function to stop the agent when it is close to the goal
+    # The potential function is -speed*parameter_dict["stop_potential_function_mag"] if 
+    # dist<parameter_dict["goal_distance_limit"]
+    # else 0
+    reached = dist < parameter_dict["goal_distance_limit"]
+    prev_reached = prev_dist_to_goal < parameter_dict["goal_distance_limit"] 
+    prev_speed_decrease_potential = -prev_speed*parameter_dict["stop_potential_function_mag"]
+    speed_decrease_potential = -speed*parameter_dict["stop_potential_function_mag"]
+    prev_speed_decrease_potential = torch.where(
+        prev_reached, prev_speed_decrease_potential, torch.zeros_like(prev_speed_decrease_potential)
+    )
+    speed_decrease_potential = torch.where(
+        reached, speed_decrease_potential, torch.zeros_like(speed_decrease_potential)
+    )
+    speed_decrease_reward = speed_decrease_potential*parameter_dict["gamma"]\
+        - prev_speed_decrease_potential
+    print(f"Speed decrease reward: {speed_decrease_reward}")
     action_diff = action - prev_action
     x_diff_penalty = exponential_penalty_function(
         parameter_dict["x_action_diff_penalty_magnitude"],
@@ -602,7 +654,8 @@ def compute_reward(
     collision_penalty = crashes * parameter_dict["collision_penalty"]
     success_reward = successes * parameter_dict["success_reward"]
     reward =  getting_closer_reward + total_action_penalty + \
-        success_reward + collision_penalty
+        success_reward + collision_penalty + speed_decrease_reward + \
+            parameter_dict["not_finished_penalty"]
     reward = reward * curriculum_reward_multiplier
     if reward.isnan().any():
         print("Reward is NaN")
