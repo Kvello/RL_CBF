@@ -66,10 +66,10 @@ class task_config:
     target_max_ratio = [0.94, 0.90, 0.90]  # target ratio w.r.t environment bounds in x,y,z
     reward_parameters = {
         "success_reward": 1000.0,
-        "potential_function_mag": 100.0,
+        "potential_function_mag": 0.0,
         "potential_function_shape": 0.5,
-        "linear_potential_function_mag": 20.0,
-        "stop_potential_function_mag": 100.0,
+        "linear_potential_function_mag": 50.0,
+        "stop_potential_function_mag": 0.0,
         "gamma": 0.99, # discount factor. Note that this is defined in the .yaml file,
         # and needs to be set to the same value here
         # It is used for reward shaping following the shaping theorem

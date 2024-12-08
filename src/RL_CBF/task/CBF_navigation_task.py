@@ -596,7 +596,6 @@ def compute_reward(
     )
     speed_decrease_reward = speed_decrease_potential*parameter_dict["gamma"]\
         - prev_speed_decrease_potential
-    print(f"Speed decrease reward: {speed_decrease_reward}")
     action_diff = action - prev_action
     x_diff_penalty = exponential_penalty_function(
         parameter_dict["x_action_diff_penalty_magnitude"],
