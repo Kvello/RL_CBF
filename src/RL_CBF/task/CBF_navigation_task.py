@@ -279,14 +279,14 @@ class CBFNavigationTask(BaseTask):
             logger.warning(
                 f"\nSuccesses: {self.success_aggregate}\nCrashes : {self.crashes_aggregate}\nTimeouts: {self.timeouts_aggregate}"
             )
+            if wandb.run is not None:
+                wandb.log({"Curriculum Level": self.curriculum_level},step=self.num_task_steps)
+                wandb.log({"Success Rate": success_rate},step=self.num_task_steps)
+                wandb.log({"Crash Rate": crash_rate},step=self.num_task_steps)
+                wandb.log({"Timeout Rate": timeout_rate},step=self.num_task_steps)
             self.success_aggregate = 0
             self.crashes_aggregate = 0
             self.timeouts_aggregate = 0
-            if wandb.run is not None:
-                wandb.log({"Curriculum Level": self.curriculum_level})
-                wandb.log({"Success Rate": success_rate})
-                wandb.log({"Crash Rate": crash_rate})
-                wandb.log({"Timeout Rate": timeout_rate})
 
     def action_transformation_function(self,action):
         position = self.obs_dict["robot_position"]
@@ -304,7 +304,6 @@ class CBFNavigationTask(BaseTask):
         transformed_action[:,1] = torch.sin(theta)*torch.cos(phi)*speed
         transformed_action[:,2] = torch.sin(phi)*speed
         transformed_action[:,3] = action[:, 3]*self.task_config.max_yawrate # rad/s
-
         if self.task_config.plot_cbf_constraint or self.task_config.penalize_cbf_constraint:
             cbf_values = self.collision_cbf.get_composite_cbf_value(
                 position,
@@ -322,9 +321,18 @@ class CBFNavigationTask(BaseTask):
                 cbf_constraint = torch.zeros_like(action[:,0])
             if cbf_constraint.isinf().any():
                 print("CBF constraint is inf")
+            # print(transformed_action[0,0])
+            # print(torch.linalg.vector_norm(transformed_action[:,0:3], dim=1).mean())
+            # print(cbf_values.min())
             if self.task_config.plot_cbf_constraint and wandb.run is not None:
-                wandb.log({"CBF constraint(unfiltered)": cbf_constraint.mean()})
-                wandb.log({"CBF values": cbf_values.mean()})
+                wandb.log({
+                    "Smallest CBF constraint(unfiltered)": cbf_constraint.min(),
+                    "Smallest CBF value": cbf_values.min(),
+                    "Mean input power": (torch.linalg.vector_norm(transformed_action[:,0:3], dim=1)**2).mean(),
+                    "Arbitrary input(x)": transformed_action[0,0],
+                    "Arbitrary input(y)": transformed_action[0,1],
+                    "Arbitrary input(z)": transformed_action[0,2]
+                    },step=self.num_task_steps)
         else:
             cbf_constraint = torch.zeros_like(action[:,0])
         if self.task_config.filter_actions:
@@ -338,7 +346,7 @@ class CBFNavigationTask(BaseTask):
             # Investigating how we can incorporate input constraints in the CBF is future work
             correction_mag = torch.linalg.vector_norm(safe_action[:,0:3] - transformed_action[:,0:3], dim=1)
             if wandb.run is not None:
-                wandb.log({"Correction magnitude": correction_mag.mean()})
+                wandb.log({"Correction magnitude": correction_mag.mean()},step=self.num_task_steps)
         else:
             safe_action = action
             correction_mag = torch.zeros_like(action[:,0])
@@ -397,6 +405,8 @@ class CBFNavigationTask(BaseTask):
         # This enables the robot to send back an updated state, and an updated observation to the RL agent after the reset.
         # This is important for the RL agent to get the correct state after the reset.
         crashes = self.obs_dict["crashes"]
+        if wandb.run is not None:
+            wandb.log({"step_crash": crashes.sum()},step=self.num_task_steps)
         reached = torch.norm(self.target_position - self.obs_dict["robot_position"], dim=1) \
                 < self.task_config.goal_distance_limit
         stopped = torch.norm(self.obs_dict["robot_body_linvel"], dim=1) \
@@ -579,7 +589,6 @@ def compute_reward(
     prev_potential = prev_exponential_potential + prev_linear_potential
     potential = exponential_potential + linear_potential
     getting_closer_reward = potential*parameter_dict["gamma"] - prev_potential
-
     # A potential function to stop the agent when it is close to the goal
     # The potential function is -speed*parameter_dict["stop_potential_function_mag"] if 
     # dist<parameter_dict["goal_distance_limit"]

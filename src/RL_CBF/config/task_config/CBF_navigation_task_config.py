@@ -24,7 +24,7 @@ class task_config:
         #interpolation_mode = "nearest"
         #return_sampled_latent = True
 
-    seed = -1
+    seed = 1
     sim_name = "base_sim"
     env_name = "env_with_obstacles"
     robot_name = "CBF_quadrotor"
@@ -39,9 +39,9 @@ class task_config:
         "width": 64,
     }
     CBF_safe_dist = CBFLidarConfig.min_range + 0.4
-    cbf_kappa_gain = 1.5
-    plot_cbf_constraint = False
-    penalize_cbf_constraint = False
+    cbf_kappa_gain = 1.0
+    plot_cbf_constraint = True
+    penalize_cbf_constraint = True
     penalize_cbf_corrections = False
     filter_actions = False
     max_speed = 2.0 # m/s
@@ -50,7 +50,7 @@ class task_config:
     # Luckily our LiDAR has symmetric vertical field of view, so we don't need a min value
 
     # These values define the goal state
-    goal_speed_limit = 0.1 # m/s
+    goal_speed_limit = 2.0 # m/s
     goal_distance_limit = 1.0 # m
     observation_space_dim = 13 + 4 + vae_config.latent_dims # root state + action_dim _ + lidar_vae_latent_dim
     privileged_observation_space_dim = 0
@@ -68,12 +68,12 @@ class task_config:
         "success_reward": 1000.0,
         "potential_function_mag": 0.0,
         "potential_function_shape": 0.5,
-        "linear_potential_function_mag": 50.0,
+        "linear_potential_function_mag": 20.0,
         "stop_potential_function_mag": 0.0,
         "gamma": 0.99, # discount factor. Note that this is defined in the .yaml file,
         # and needs to be set to the same value here
         # It is used for reward shaping following the shaping theorem
-        "not_finished_penalty": -0.1, # To incentivize the agent to finish the episode
+        "not_finished_penalty": -0.5, # To incentivize the agent to finish the episode
         "x_action_diff_penalty_magnitude": 0.8,
         "x_action_diff_penalty_exponent": 3.333,
         "y_action_diff_penalty_magnitude": 0.8,
@@ -90,9 +90,9 @@ class task_config:
         "z_absolute_action_penalty_exponent": 0.3,
         "yawrate_absolute_action_penalty_magnitude": 1.6,
         "yawrate_absolute_action_penalty_exponent": 2.0,
-        "collision_penalty": -100.0,
-        "cbf_correction_penalty_magnitude" : -5.0,
-        "cbf_invariance_penalty_magnitude" : 20.0,
+        "collision_penalty": -1000.0,
+        "cbf_correction_penalty_magnitude" : -0.0,
+        "cbf_invariance_penalty_magnitude" : 100.0,
     }
 
     class curriculum:
@@ -123,4 +123,16 @@ is needed, my intuition is telling me that an exponential function might be the 
 6. If gamma is set to 1, it works decently, but the timeout rate is too high. The learning
 is quite sensitive to the horizon lenght(probably in combination with lr etc.) however. Try including a
 fixed step penalty for intcentivizing the agent to finish the episode.
+7. Observation: There seem to be at least two different but not independent issues.
+First, the rewards sometimes don't increase, even though we have more successes. This must be due to
+wrong reward magnitudes.
+Second, the agent seems to struggle with stopping when close to the goal. It seems so, because
+the rewards flatten out after a while. This hypothesis can be tested by setting the
+goal_speed_limit to 2.0, and see how the rewards behave. It might be that both these issues can be
+solved jointly by providing a stopping potential function. I have tried one that is discontinuous
+but it didn't work. I should try a continuous one.
+8. If th CBF penalty is tuned wrong(so it seems), the agent learns to set u=0.
+As this make the CBF penalty 0. What is weird is that the quadcopter then moves, essentially
+falling downwards. Not sure if this is intended behaviout. Need to debug this.
+Can print in the lee velocity control funciton.
 """
