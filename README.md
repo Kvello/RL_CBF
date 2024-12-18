@@ -1,6 +1,8 @@
 # Quadrotor RL Policy
 This repository contains the code used to develop, implement, and test a RL-policy for navigation of a quadrotor.
-The method proposes including a penalty in the reward function based on the magnitude of the constraint violation
+The method proposes including a penalty in the reward function based on the magnitude of the constraint violation.
+It was developed as part of the specialization project at the Norwegian University of Science and Technolocy(NTNU)
+[TTK4550](https://www.ntnu.edu/studies/courses/TTK4550#tab=omEmnet) fall 2024.
 
 ## :bulb: Main contributions
 The main contributions of this work are under the task definition under
