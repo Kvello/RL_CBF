@@ -24,7 +24,7 @@ class task_config:
         #interpolation_mode = "nearest"
         #return_sampled_latent = True
 
-    seed = 1
+    seed = 8
     sim_name = "base_sim"
     env_name = "env_with_obstacles"
     robot_name = "CBF_quadrotor"
@@ -92,11 +92,11 @@ class task_config:
         "yawrate_absolute_action_penalty_exponent": 2.0,
         "collision_penalty": -1000.0,
         "cbf_correction_penalty_magnitude" : -0.0,
-        "cbf_invariance_penalty_magnitude" : 100.0,
+        "cbf_invariance_penalty_magnitude" : 50.0,
     }
 
     class curriculum:
-        min_level = 10
+        min_level = 30
         max_level = 45
         check_after_log_instances = 2048
         increase_step = 0

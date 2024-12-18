@@ -1,13 +1,11 @@
 params:  
-  seed: 8
+  seed: 4
   algo:
     name: a2c_continuous
 
   model:
     name: continuous_a2c_logstd
   
-  load_checkpoint: False
-
   network:
     name: actor_critic
     separate: False
@@ -37,7 +35,7 @@ params:
   config:
     env_name: quad
     env_config:
-      num_envs: 256
+      num_envs: 1
       
     name: gen_ppo
     reward_shaper:
@@ -72,7 +70,7 @@ params:
     #weight_decay: 0.0001
     use_smooth_clamp: False
 
+
     player:
-      render: True
-      deterministic: True
-      games_num: 100000
+      use_vecenv: True
+      games_num: 512

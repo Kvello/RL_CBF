@@ -246,7 +246,6 @@ def update_config(config, args):
         config["params"]["seed"] = args["seed"]
         config["params"]["config"]["env_config"]["seed"] = args["seed"]
 
-    config["params"]["config"]["player"] = {"use_vecenv": True}
     return config
 
 
@@ -261,7 +260,6 @@ if __name__ == "__main__":
     print("Loading config: ", config_name)
     with open(config_name, "r") as stream:
         config = yaml.safe_load(stream)
-
         config = update_config(config, args)
 
         from rl_games.torch_runner import Runner

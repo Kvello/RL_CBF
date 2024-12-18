@@ -115,7 +115,7 @@ class CBFNavigationTask(BaseTask):
         self.curriculum_progress_fraction = (
             self.curriculum_level - self.task_config.curriculum.min_level
         ) / (self.task_config.curriculum.max_level - self.task_config.curriculum.min_level)
-
+        # Reset environment
         self.terminations = torch.zeros_like(self.obs_dict["crashes"])
         self.truncations = self.obs_dict["truncations"]
         self.rewards = torch.zeros(self.truncations.shape[0], device=self.device)
@@ -280,10 +280,11 @@ class CBFNavigationTask(BaseTask):
                 f"\nSuccesses: {self.success_aggregate}\nCrashes : {self.crashes_aggregate}\nTimeouts: {self.timeouts_aggregate}"
             )
             if wandb.run is not None:
-                wandb.log({"Curriculum Level": self.curriculum_level},step=self.num_task_steps)
-                wandb.log({"Success Rate": success_rate},step=self.num_task_steps)
-                wandb.log({"Crash Rate": crash_rate},step=self.num_task_steps)
-                wandb.log({"Timeout Rate": timeout_rate},step=self.num_task_steps)
+                wandb.log({"Curriculum Level": self.curriculum_level,
+                           "Success Rate": success_rate,
+                           "Crash Rate": crash_rate,
+                           "Tmeout Rate": timeout_rate
+                           },step=self.num_task_steps)
             self.success_aggregate = 0
             self.crashes_aggregate = 0
             self.timeouts_aggregate = 0
@@ -304,6 +305,8 @@ class CBFNavigationTask(BaseTask):
         transformed_action[:,1] = torch.sin(theta)*torch.cos(phi)*speed
         transformed_action[:,2] = torch.sin(phi)*speed
         transformed_action[:,3] = action[:, 3]*self.task_config.max_yawrate # rad/s
+        cbf_values = torch.zeros_like(action[:,0])
+        cbf_constraint = torch.zeros_like(action[:,0])
         if self.task_config.plot_cbf_constraint or self.task_config.penalize_cbf_constraint:
             cbf_values = self.collision_cbf.get_composite_cbf_value(
                 position,
@@ -324,15 +327,6 @@ class CBFNavigationTask(BaseTask):
             # print(transformed_action[0,0])
             # print(torch.linalg.vector_norm(transformed_action[:,0:3], dim=1).mean())
             # print(cbf_values.min())
-            if self.task_config.plot_cbf_constraint and wandb.run is not None:
-                wandb.log({
-                    "Smallest CBF constraint(unfiltered)": cbf_constraint.min(),
-                    "Smallest CBF value": cbf_values.min(),
-                    "Mean input power": (torch.linalg.vector_norm(transformed_action[:,0:3], dim=1)**2).mean(),
-                    "Arbitrary input(x)": transformed_action[0,0],
-                    "Arbitrary input(y)": transformed_action[0,1],
-                    "Arbitrary input(z)": transformed_action[0,2]
-                    },step=self.num_task_steps)
         else:
             cbf_constraint = torch.zeros_like(action[:,0])
         if self.task_config.filter_actions:
@@ -345,11 +339,28 @@ class CBFNavigationTask(BaseTask):
             safe_action[:,3] = transformed_action[:,3]
             # Investigating how we can incorporate input constraints in the CBF is future work
             correction_mag = torch.linalg.vector_norm(safe_action[:,0:3] - transformed_action[:,0:3], dim=1)
-            if wandb.run is not None:
-                wandb.log({"Correction magnitude": correction_mag.mean()},step=self.num_task_steps)
+            if wandb.run is not None and self.task_config.plot_cbf_constraint:
+                wandb.log({
+                    "Smallest CBF constraint(unfiltered)": cbf_constraint.min(),
+                    "Smallest CBF value": cbf_values.min(),
+                    "Mean input power": (torch.linalg.vector_norm(transformed_action[:,0:3], dim=1)**2).mean(),
+                    "Arbitrary input(x)": transformed_action[0,0],
+                    "Arbitrary input(y)": transformed_action[0,1],
+                    "Arbitrary input(z)": transformed_action[0,2],
+                    "Correction magnitude": correction_mag.mean()
+                    },step=self.num_task_steps)
         else:
             safe_action = action
             correction_mag = torch.zeros_like(action[:,0])
+            if self.task_config.plot_cbf_constraint and wandb.run is not None:
+                wandb.log({
+                    "Smallest CBF constraint(unfiltered)": cbf_constraint.min(),
+                    "Smallest CBF value": cbf_values.min(),
+                    "Mean input power": (torch.linalg.vector_norm(transformed_action[:,0:3], dim=1)**2).mean(),
+                    "Arbitrary input(x)": transformed_action[0,0],
+                    "Arbitrary input(y)": transformed_action[0,1],
+                    "Arbitrary input(z)": transformed_action[0,2]
+                    },step=self.num_task_steps)
         return safe_action, correction_mag, cbf_constraint
     def process_image_observation(self):
         image_obs = self.obs_dict["depth_range_pixels"].squeeze(1)
